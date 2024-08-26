@@ -43,63 +43,63 @@ export type Piece = {
   name: string;
 };
 
-function makeEdge(piece: Piece): Edge {
-  const edge = {
-    aff: piece,
-    next: undefined,
-    prev: undefined,
-    adj: undefined,
-  } as unknown as Edge;
-  edge.next = edge;
-  edge.prev = edge;
-  edge.adj = edge;
-  return edge;
-}
-
-function linkEdges(edge1: Edge, edge2: Edge): void {
-  edge1.next = edge2;
-  edge2.prev = edge1;
-}
-
-function adjEdges(edge1: Edge, edge2: Edge): void {
-  edge1.adj = edge2;
-  edge2.adj = edge1;
-}
-
-function makeEdges(piece: Piece, n: number): Piece {
-  piece.edges = indices(n).map(_ => makeEdge(piece));
-  for (const i of indices(n)) {
-    linkEdges(piece.edges[i], piece.edges[(i + 1) % piece.edges.length]);
-  }
-  return piece;
-}
-
-function makeCornerPiece(name: string): Piece {
-  return makeEdges({type: PieceType.CornerPiece, edges: [], name}, 3);
-}
-
-function makeEdgePiece(name: string): Piece {
-  return makeEdges({type: PieceType.EdgePiece, edges: [], name}, 4);
-}
-
-function makeBoundaryPiece(name: string): Piece {
-  return makeEdges({type: PieceType.BoundaryPiece, edges: [], name}, 12);
-}
-
-function makeInfPiece(name: string): Piece {
-  return makeEdges({type: PieceType.InfPiece, edges: [], name}, 2);
-}
-
-function makeCenterPiece(name: string): Piece {
-  return makeEdges({type: PieceType.CenterPiece, edges: [], name}, 4);
-}
-
 export type Puzzle = {
   pieces: Piece[];
   stands: Edge[]; // boundary piece's edges at the top intersection point
 };
 
 export namespace Puzzle {
+  function makeEdge(piece: Piece): Edge {
+    const edge = {
+      aff: piece,
+      next: undefined,
+      prev: undefined,
+      adj: undefined,
+    } as unknown as Edge;
+    edge.next = edge;
+    edge.prev = edge;
+    edge.adj = edge;
+    return edge;
+  }
+
+  function linkEdges(edge1: Edge, edge2: Edge): void {
+    edge1.next = edge2;
+    edge2.prev = edge1;
+  }
+
+  function adjEdges(edge1: Edge, edge2: Edge): void {
+    edge1.adj = edge2;
+    edge2.adj = edge1;
+  }
+
+  function makeEdges(piece: Piece, n: number): Piece {
+    piece.edges = indices(n).map(_ => makeEdge(piece));
+    for (const i of indices(n)) {
+      linkEdges(piece.edges[i], piece.edges[(i + 1) % piece.edges.length]);
+    }
+    return piece;
+  }
+
+  function makeCornerPiece(name: string): Piece {
+    return makeEdges({type: PieceType.CornerPiece, edges: [], name}, 3);
+  }
+
+  function makeEdgePiece(name: string): Piece {
+    return makeEdges({type: PieceType.EdgePiece, edges: [], name}, 4);
+  }
+
+  function makeBoundaryPiece(name: string): Piece {
+    return makeEdges({type: PieceType.BoundaryPiece, edges: [], name}, 12);
+  }
+
+  function makeInfPiece(name: string): Piece {
+    return makeEdges({type: PieceType.InfPiece, edges: [], name}, 2);
+  }
+
+  function makeCenterPiece(name: string): Piece {
+    return makeEdges({type: PieceType.CenterPiece, edges: [], name}, 4);
+  }
+
   export function make(): Puzzle {
     // top pieces
 
@@ -528,6 +528,50 @@ export namespace PrincipalPuzzle {
       { center: [+puzzle.center_x, 0], radius: puzzle.radius },
     ];
   }
+  export function getShiftTransformation(puzzle: PrincipalPuzzle): Geo.RigidTransformation {
+    if (puzzle.state.type === StateType.LeftShifted) {
+      return Geo.compose(
+        Geo.translate([puzzle.center_x, 0]),
+        Geo.rotate(puzzle.state.angle),
+        Geo.translate([-puzzle.center_x, 0]),
+      );
+    }
+    if (puzzle.state.type === StateType.RightShifted) {
+      return Geo.compose(
+        Geo.translate([-puzzle.center_x, 0]),
+        Geo.rotate(puzzle.state.angle),
+        Geo.translate([puzzle.center_x, 0]),
+      );
+    }
+    return Geo.id_trans();
+  }
+  export function getTwistTransformation(puzzle: PrincipalPuzzle, side: boolean, forward: boolean): Geo.RigidTransformation {
+    if (side && forward)
+      return Geo.compose(
+        Geo.translate([puzzle.center_x, 0]),
+        Geo.rotate(Math.PI / 3),
+        Geo.translate([-puzzle.center_x, 0]),
+      );
+    if (side && !forward)
+      return Geo.compose(
+        Geo.translate([puzzle.center_x, 0]),
+        Geo.rotate(-Math.PI / 3),
+        Geo.translate([-puzzle.center_x, 0]),
+      );
+    if (!side && forward)
+      return Geo.compose(
+        Geo.translate([-puzzle.center_x, 0]),
+        Geo.rotate(Math.PI / 3),
+        Geo.translate([puzzle.center_x, 0]),
+      );
+    if (!side && !forward)
+      return Geo.compose(
+        Geo.translate([-puzzle.center_x, 0]),
+        Geo.rotate(-Math.PI / 3),
+        Geo.translate([puzzle.center_x, 0]),
+      );
+    return Geo.id_trans();
+  }
 
   // `offset` is the offset of the hyperbola curve
   // `angle` is the angle of vector from the focus to the point on the hyperbola curve
@@ -603,51 +647,6 @@ export namespace PrincipalPuzzle {
     };
   }
 
-  export function getShiftTransformation(puzzle: PrincipalPuzzle): Geo.RigidTransformation {
-    if (puzzle.state.type === StateType.LeftShifted) {
-      return Geo.compose(
-        Geo.translate([puzzle.center_x, 0]),
-        Geo.rotate(puzzle.state.angle),
-        Geo.translate([-puzzle.center_x, 0]),
-      );
-    }
-    if (puzzle.state.type === StateType.RightShifted) {
-      return Geo.compose(
-        Geo.translate([-puzzle.center_x, 0]),
-        Geo.rotate(puzzle.state.angle),
-        Geo.translate([puzzle.center_x, 0]),
-      );
-    }
-    return Geo.id_trans();
-  }
-  export function getTwistTransformation(puzzle: PrincipalPuzzle, side: boolean, forward: boolean): Geo.RigidTransformation {
-    if (side && forward)
-      return Geo.compose(
-        Geo.translate([puzzle.center_x, 0]),
-        Geo.rotate(Math.PI / 3),
-        Geo.translate([-puzzle.center_x, 0]),
-      );
-    if (side && !forward)
-      return Geo.compose(
-        Geo.translate([puzzle.center_x, 0]),
-        Geo.rotate(-Math.PI / 3),
-        Geo.translate([-puzzle.center_x, 0]),
-      );
-    if (!side && forward)
-      return Geo.compose(
-        Geo.translate([-puzzle.center_x, 0]),
-        Geo.rotate(Math.PI / 3),
-        Geo.translate([puzzle.center_x, 0]),
-      );
-    if (!side && !forward)
-      return Geo.compose(
-        Geo.translate([-puzzle.center_x, 0]),
-        Geo.rotate(-Math.PI / 3),
-        Geo.translate([puzzle.center_x, 0]),
-      );
-    return Geo.id_trans();
-  }
-
   export function twistTo(puzzle: PrincipalPuzzle, angle: Geo.Angle, side: boolean): boolean {
     if (side && puzzle.state.type !== StateType.RightShifted) {
       puzzle.state = {
@@ -665,7 +664,6 @@ export namespace PrincipalPuzzle {
       return false;
     }
   }
-
   export function snap(puzzle: PrincipalPuzzle): [side: boolean, turn: number] {
     if (puzzle.state.type === StateType.Aligned) return [true, 0];
     let dn: number;

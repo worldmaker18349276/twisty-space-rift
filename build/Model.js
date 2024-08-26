@@ -33,50 +33,50 @@ export var PieceType;
     PieceType[PieceType["BoundaryPiece"] = 3] = "BoundaryPiece";
     PieceType[PieceType["InfPiece"] = 4] = "InfPiece";
 })(PieceType || (PieceType = {}));
-function makeEdge(piece) {
-    const edge = {
-        aff: piece,
-        next: undefined,
-        prev: undefined,
-        adj: undefined,
-    };
-    edge.next = edge;
-    edge.prev = edge;
-    edge.adj = edge;
-    return edge;
-}
-function linkEdges(edge1, edge2) {
-    edge1.next = edge2;
-    edge2.prev = edge1;
-}
-function adjEdges(edge1, edge2) {
-    edge1.adj = edge2;
-    edge2.adj = edge1;
-}
-function makeEdges(piece, n) {
-    piece.edges = indices(n).map(_ => makeEdge(piece));
-    for (const i of indices(n)) {
-        linkEdges(piece.edges[i], piece.edges[(i + 1) % piece.edges.length]);
-    }
-    return piece;
-}
-function makeCornerPiece(name) {
-    return makeEdges({ type: PieceType.CornerPiece, edges: [], name }, 3);
-}
-function makeEdgePiece(name) {
-    return makeEdges({ type: PieceType.EdgePiece, edges: [], name }, 4);
-}
-function makeBoundaryPiece(name) {
-    return makeEdges({ type: PieceType.BoundaryPiece, edges: [], name }, 12);
-}
-function makeInfPiece(name) {
-    return makeEdges({ type: PieceType.InfPiece, edges: [], name }, 2);
-}
-function makeCenterPiece(name) {
-    return makeEdges({ type: PieceType.CenterPiece, edges: [], name }, 4);
-}
 export var Puzzle;
 (function (Puzzle) {
+    function makeEdge(piece) {
+        const edge = {
+            aff: piece,
+            next: undefined,
+            prev: undefined,
+            adj: undefined,
+        };
+        edge.next = edge;
+        edge.prev = edge;
+        edge.adj = edge;
+        return edge;
+    }
+    function linkEdges(edge1, edge2) {
+        edge1.next = edge2;
+        edge2.prev = edge1;
+    }
+    function adjEdges(edge1, edge2) {
+        edge1.adj = edge2;
+        edge2.adj = edge1;
+    }
+    function makeEdges(piece, n) {
+        piece.edges = indices(n).map(_ => makeEdge(piece));
+        for (const i of indices(n)) {
+            linkEdges(piece.edges[i], piece.edges[(i + 1) % piece.edges.length]);
+        }
+        return piece;
+    }
+    function makeCornerPiece(name) {
+        return makeEdges({ type: PieceType.CornerPiece, edges: [], name }, 3);
+    }
+    function makeEdgePiece(name) {
+        return makeEdges({ type: PieceType.EdgePiece, edges: [], name }, 4);
+    }
+    function makeBoundaryPiece(name) {
+        return makeEdges({ type: PieceType.BoundaryPiece, edges: [], name }, 12);
+    }
+    function makeInfPiece(name) {
+        return makeEdges({ type: PieceType.InfPiece, edges: [], name }, 2);
+    }
+    function makeCenterPiece(name) {
+        return makeEdges({ type: PieceType.CenterPiece, edges: [], name }, 4);
+    }
     function make() {
         // top pieces
         // edges[0]: edge started with center piece
@@ -430,6 +430,28 @@ export var PrincipalPuzzle;
         ];
     }
     PrincipalPuzzle.getTwistCircles = getTwistCircles;
+    function getShiftTransformation(puzzle) {
+        if (puzzle.state.type === StateType.LeftShifted) {
+            return Geo.compose(Geo.translate([puzzle.center_x, 0]), Geo.rotate(puzzle.state.angle), Geo.translate([-puzzle.center_x, 0]));
+        }
+        if (puzzle.state.type === StateType.RightShifted) {
+            return Geo.compose(Geo.translate([-puzzle.center_x, 0]), Geo.rotate(puzzle.state.angle), Geo.translate([puzzle.center_x, 0]));
+        }
+        return Geo.id_trans();
+    }
+    PrincipalPuzzle.getShiftTransformation = getShiftTransformation;
+    function getTwistTransformation(puzzle, side, forward) {
+        if (side && forward)
+            return Geo.compose(Geo.translate([puzzle.center_x, 0]), Geo.rotate(Math.PI / 3), Geo.translate([-puzzle.center_x, 0]));
+        if (side && !forward)
+            return Geo.compose(Geo.translate([puzzle.center_x, 0]), Geo.rotate(-Math.PI / 3), Geo.translate([-puzzle.center_x, 0]));
+        if (!side && forward)
+            return Geo.compose(Geo.translate([-puzzle.center_x, 0]), Geo.rotate(Math.PI / 3), Geo.translate([puzzle.center_x, 0]));
+        if (!side && !forward)
+            return Geo.compose(Geo.translate([-puzzle.center_x, 0]), Geo.rotate(-Math.PI / 3), Geo.translate([puzzle.center_x, 0]));
+        return Geo.id_trans();
+    }
+    PrincipalPuzzle.getTwistTransformation = getTwistTransformation;
     // `offset` is the offset of the hyperbola curve
     // `angle` is the angle of vector from the focus to the point on the hyperbola curve
     // when offset < 0: `angle` is the angle `(f1, f2, point)`
@@ -495,28 +517,6 @@ export var PrincipalPuzzle;
             right: [right_piece1, right_angle - right_piece1_angle],
         };
     }
-    function getShiftTransformation(puzzle) {
-        if (puzzle.state.type === StateType.LeftShifted) {
-            return Geo.compose(Geo.translate([puzzle.center_x, 0]), Geo.rotate(puzzle.state.angle), Geo.translate([-puzzle.center_x, 0]));
-        }
-        if (puzzle.state.type === StateType.RightShifted) {
-            return Geo.compose(Geo.translate([-puzzle.center_x, 0]), Geo.rotate(puzzle.state.angle), Geo.translate([puzzle.center_x, 0]));
-        }
-        return Geo.id_trans();
-    }
-    PrincipalPuzzle.getShiftTransformation = getShiftTransformation;
-    function getTwistTransformation(puzzle, side, forward) {
-        if (side && forward)
-            return Geo.compose(Geo.translate([puzzle.center_x, 0]), Geo.rotate(Math.PI / 3), Geo.translate([-puzzle.center_x, 0]));
-        if (side && !forward)
-            return Geo.compose(Geo.translate([puzzle.center_x, 0]), Geo.rotate(-Math.PI / 3), Geo.translate([-puzzle.center_x, 0]));
-        if (!side && forward)
-            return Geo.compose(Geo.translate([-puzzle.center_x, 0]), Geo.rotate(Math.PI / 3), Geo.translate([puzzle.center_x, 0]));
-        if (!side && !forward)
-            return Geo.compose(Geo.translate([-puzzle.center_x, 0]), Geo.rotate(-Math.PI / 3), Geo.translate([puzzle.center_x, 0]));
-        return Geo.id_trans();
-    }
-    PrincipalPuzzle.getTwistTransformation = getTwistTransformation;
     function twistTo(puzzle, angle, side) {
         if (side && puzzle.state.type !== StateType.RightShifted) {
             puzzle.state = {
