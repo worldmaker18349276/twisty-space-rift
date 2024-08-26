@@ -116,8 +116,10 @@ export function toCanvasPath<T>(cs: CoordinateSystem, path: Geo.Path<T>, hide?: 
       }
     }
   }
-  if (path.is_closed && !(hide?.[0]) && !(hide?.[path.segs.length - 1]))
+  if (path.is_closed && !(hide?.[0]) && !(hide?.[path.segs.length - 1])) {
+    // console.log("close");
     path2D.closePath();
+  }
   return path2D;
 }
 

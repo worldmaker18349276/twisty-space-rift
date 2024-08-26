@@ -98,8 +98,10 @@ export class SpaceRift2s {
         // draw textures
         const positions = Model.PrincipalPuzzleWithTexture.getPositions(this.model);
         const clipped_images = Model.PrincipalPuzzleWithTexture.getClippedImages(this.model);
-        if (clipped_images === undefined)
+        if (clipped_images === undefined) {
+            console.error("fail to calculate clipped images");
             return false;
+        }
         for (const clipped_image of clipped_images) {
             const path = Draw.toCanvasPath(this.cs, clipped_image.region);
             const pos = Draw.toCanvasMatrix(this.cs, clipped_image.transformation);
@@ -196,7 +198,7 @@ export class SpaceRift2s {
             const x = event.clientX - rect.left;
             const y = event.clientY - rect.top;
             const point = Draw.toCoordinate(this.cs, [x, y]);
-            const curr = Model.PrincipalPuzzle.calculateRiftTuringPoint(this.model.puzzle);
+            const curr = Model.PrincipalPuzzle.calculateRiftTurningPoint(this.model.puzzle);
             if (event.button === 1) {
                 this.tear(this.model.puzzle.rift_angle + Math.PI * 2, this.model.puzzle.rift_offset, ROTATE_RIFT_DURATION);
             }
@@ -204,9 +206,9 @@ export class SpaceRift2s {
                 is_dragging = true;
             }
             else if (event.button === 0 || event.button === 2) {
-                const [left_center, right_center] = Model.PrincipalPuzzle.getTwistCenterPoints(this.model.puzzle);
-                const left_dis = Geo.norm(Geo.sub(left_center, point));
-                const right_dis = Geo.norm(Geo.sub(right_center, point));
+                const [left_circle, right_circle] = Model.PrincipalPuzzle.getTwistCircles(this.model.puzzle);
+                const left_dis = Geo.norm(Geo.sub(left_circle.center, point));
+                const right_dis = Geo.norm(Geo.sub(right_circle.center, point));
                 if (left_dis > this.model.puzzle.radius && right_dis > this.model.puzzle.radius)
                     return;
                 const side = left_dis < right_dis;

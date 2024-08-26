@@ -28,10 +28,6 @@ function append<K, V>(map: Map<K, V[]>, key: K, values: V[]) {
   }
 }
 
-// angle between edges should not be larger than PI
-// arc should not be closed to 2PI
-// edges of a piece should not intersect with itself
-// it should form a loop counterclockwise loop except for InfPiece
 export type Edge = {
   aff: Piece;
   next: Edge;
@@ -492,9 +488,7 @@ export type PrincipalPuzzle = {
   rift_offset: number; // -1 ~ +1
   rift_angle: Geo.Angle; // 0 ~ 4 pi
   ramified_angles: {
-    // angle of edges[0] related to right center, ccw as positive
     left: [piece:Piece, n:number]; // n: 0 ~ 12
-    // angle of edges[0] related to left center, cw as positive
     right: [piece:Piece, n:number]; // n: 0 ~ 12
   };
 };
@@ -528,8 +522,11 @@ export namespace PrincipalPuzzle {
     };
   }
 
-  export function getTwistCenterPoints(puzzle: PrincipalPuzzle): [left:Geo.Point, right:Geo.Point] {
-    return [[-puzzle.center_x, 0], [+puzzle.center_x, 0]];
+  export function getTwistCircles(puzzle: PrincipalPuzzle): [left:Geo.DirectionalCircle, right:Geo.DirectionalCircle] {
+    return [
+      { center: [-puzzle.center_x, 0], radius: puzzle.radius },
+      { center: [+puzzle.center_x, 0], radius: puzzle.radius },
+    ];
   }
 
   // `offset` is the offset of the hyperbola curve
@@ -583,6 +580,8 @@ export namespace PrincipalPuzzle {
     }
   }
 
+  // left[1]: angle of rift relative to left[0].edges[0], ccw as positive
+  // right[1]: angle of rift relative to right[0].edges[0], cw as positive
   function getRamifiedAngles(puzzle: PrincipalPuzzle): {left:[piece:Piece, angle:Geo.Angle], right:[piece:Piece, angle:Geo.Angle]} {
     const left_center: Geo.Vector2 = [-puzzle.center_x, 0];
     const right_center: Geo.Vector2 = [+puzzle.center_x, 0];
@@ -599,8 +598,8 @@ export namespace PrincipalPuzzle {
       - (puzzle.state.type === StateType.RightShifted ? puzzle.state.angle : 0);
 
     return {
-      left: [left_piece1, left_piece1_angle - left_angle],
-      right: [right_piece1, right_piece1_angle - right_angle],
+      left: [left_piece1, left_angle - left_piece1_angle],
+      right: [right_piece1, right_angle - right_piece1_angle],
     };
   }
 
@@ -691,13 +690,13 @@ export namespace PrincipalPuzzle {
     return [side, dn];
   }
   export function setRift(puzzle: PrincipalPuzzle, angle: Geo.Angle, offset: number): void {
-    angle = Geo.mod1(angle / (Math.PI*4)) * (Math.PI*4);
+    angle = Geo.mod(angle, Math.PI*4);
     puzzle.rift_angle = angle;
 
     offset = Math.max(Math.min(offset, MAX_RIFT_OFFSET), -MAX_RIFT_OFFSET);
     puzzle.rift_offset = offset;
   }
-  export function calculateRiftTuringPoint(puzzle: PrincipalPuzzle): Geo.Point | undefined {
+  export function calculateRiftTurningPoint(puzzle: PrincipalPuzzle): Geo.Point | undefined {
     const left_center: Geo.Vector2 = [-puzzle.center_x, 0];
     const right_center: Geo.Vector2 = [+puzzle.center_x, 0];
     const [point, is_solid] = getHyperbolaPoint(left_center, right_center, puzzle.rift_offset, puzzle.rift_angle);
@@ -756,9 +755,7 @@ export namespace PrincipalPuzzle {
     const left_trans_rev = getTwistTransformation(puzzle, true, false);
     const right_trans = getTwistTransformation(puzzle, false, true);
     const right_trans_rev = getTwistTransformation(puzzle, false, false);
-
-    const left_circle: Geo.DirectionalCircle = { center: [-puzzle.center_x, 0], radius: puzzle.radius };
-    const right_circle: Geo.DirectionalCircle = { center: [+puzzle.center_x, 0], radius: puzzle.radius };
+    const [left_circle, right_circle] = getTwistCircles(puzzle);
     const top_circle = Geo.transformCircle(right_circle, left_trans);
     
     const intersections = Geo.intersectCircles(left_circle, right_circle);
@@ -968,7 +965,7 @@ export namespace PrincipalPuzzle {
       }
       const res = Geo.cutRegion(shape, rift);
       if (res === undefined) {
-        console.warn("fail to clip path");
+        console.warn("fail to clip path: fail to cut regions of normal pieces");
         return undefined;
       }
       append(cutted_shapes, piece, res);
@@ -984,24 +981,30 @@ export namespace PrincipalPuzzle {
       const left_center_pieces = unrollUntilLoopback(left_piece1, piece => piece.edges[3].adj.aff);
       const right_center_pieces = unrollUntilLoopback(right_piece1, piece => piece.edges[3].adj.aff);
 
-      for (const i of indices(left_center_pieces.length)) {
-        const piece = left_center_pieces[i];
-        const angle = left_piece1_ramified_angle + i * Math.PI*2/3;
-        const is_in_angle = Geo.inangle(0, [angle, angle + Math.PI*2/3]);
+      const left_ramified_piece_index =
+        Geo.mod(Math.floor(left_piece1_ramified_angle / (Math.PI*2/3)), 6);
+      const left_ramified_piece_index_ = Geo.mod(left_ramified_piece_index + 3, 6);
+      const right_ramified_piece_index =
+        6 - 1 - Geo.mod(Math.floor(right_piece1_ramified_angle / (Math.PI*2/3)), 6);
+      const right_ramified_piece_index_ = Geo.mod(right_ramified_piece_index + 3, 6);
+
+      for (const piece of left_center_pieces) {
         const shape = shapes.get(piece)!;
+        const is_ramified =
+          piece === left_center_pieces[left_ramified_piece_index]
+          || piece === left_center_pieces[left_ramified_piece_index_];
         const res = Geo.cutRegion(shape, rift, {
           index_of_path: 0,
           incident_with_cut_start_or_end: true,
-          considered_as_incident: is_in_angle,
+          considered_as_incident: is_ramified,
         });
         if (res === undefined) {
-          console.warn("fail to clip path");
+          console.warn("fail to clip path: fail to cut regions of left ramified pieces");
           return undefined;
         }
         append(cutted_shapes, piece, res);
 
-        const is_in_angle_ = Geo.inangle(0, [angle, angle + Math.PI*2/3], 2);
-        if (is_in_angle_) {
+        if (piece === left_center_pieces[left_ramified_piece_index]) {
           prin_shape0 = res.find(path =>
             path.segs.some(seg =>
               seg.source.type === Geo.CutSourceType.LeftCut
@@ -1013,24 +1016,25 @@ export namespace PrincipalPuzzle {
         }
       }
 
-      for (const i of indices(right_center_pieces.length)) {
-        const piece = right_center_pieces[i];
-        const angle = right_piece1_ramified_angle - i*Math.PI*2/3;
-        const is_in_angle = Geo.inangle(0, [angle - Math.PI*2/3, angle]);
+      for (const piece of right_center_pieces) {
         const shape = shapes.get(piece)!;
+        const is_ramified =
+          piece === right_center_pieces[right_ramified_piece_index]
+          || piece === right_center_pieces[right_ramified_piece_index_];
         const res = Geo.cutRegion(shape, rift, {
           index_of_path: 0,
           incident_with_cut_start_or_end: false,
-          considered_as_incident: is_in_angle,
+          considered_as_incident: is_ramified,
         });
         if (res === undefined) {
-          console.warn("fail to clip path");
+          console.warn("fail to clip path: fail to cut regions of right ramified pieces");
           return undefined;
         }
         append(cutted_shapes, piece, res);
       }
     }
     if (prin_shape0 === undefined) {
+      console.warn("fail to clip path: cannot find principal part");
       return undefined;
     }
 
@@ -1185,9 +1189,9 @@ function getTextureFunction(
 export type PrincipalPuzzleWithTexture<Image> = {
   puzzle: PrincipalPuzzle;
   unshifted_positions: Map<Piece, Geo.RigidTransformation>;
-  textures: Map<Piece, number>;
+  texture_indices: Map<Piece, number>;
+  textures: [Image, Image, Image, Image];
   auxiliary_edges: Set<Edge>;
-  sheets: [Image, Image, Image, Image];
 };
 
 export namespace PrincipalPuzzleWithTexture {
@@ -1195,27 +1199,26 @@ export namespace PrincipalPuzzleWithTexture {
     puzzle: PrincipalPuzzle,
     f: [Complex.ComplexFunction, Complex.ComplexFunction, Complex.ComplexFunction, Complex.ComplexFunction],
     draw_image: (f: Complex.ComplexFunction) => Image,
-    scale: number = 1,
   ): PrincipalPuzzleWithTexture<Image> {
     const unshifted_positions = new Map(puzzle.space.pieces.map(piece => [piece, Geo.id_trans()]));
 
-    const textures = new Map<Piece, number>();
+    const texture_indices = new Map<Piece, number>();
     {
       const edgeL = puzzle.space.stands[0].adj.next.adj.prev.adj.next;
       const edgeR = puzzle.space.stands[1].adj.next.adj.prev.adj.prev;
-      textures.set(edgeL.aff, 3);
-      textures.set(edgeL.adj.aff, 3);
-      textures.set(edgeL.next.next.adj.aff, 3);
-      textures.set(edgeR.aff, 2);
-      textures.set(edgeR.adj.aff, 2);
-      textures.set(edgeR.next.next.adj.aff, 2);
+      texture_indices.set(edgeL.aff, 3);
+      texture_indices.set(edgeL.adj.aff, 3);
+      texture_indices.set(edgeL.next.next.adj.aff, 3);
+      texture_indices.set(edgeR.aff, 2);
+      texture_indices.set(edgeR.adj.aff, 2);
+      texture_indices.set(edgeR.next.next.adj.aff, 2);
       
       const prin = new Set<Piece>();
       prin.add(puzzle.space.stands[0].aff);
       for (const piece of prin) {
         for (const edge of piece.edges) {
           const adj_piece = edge.adj.aff;
-          if (adj_piece.type !== PieceType.InfPiece && !textures.has(adj_piece)) {
+          if (adj_piece.type !== PieceType.InfPiece && !texture_indices.has(adj_piece)) {
             prin.add(adj_piece);
           }
         }
@@ -1226,16 +1229,16 @@ export namespace PrincipalPuzzleWithTexture {
       for (const piece of comp) {
         for (const edge of piece.edges) {
           const adj_piece = edge.adj.aff;
-          if (adj_piece.type !== PieceType.InfPiece && !textures.has(adj_piece)) {
+          if (adj_piece.type !== PieceType.InfPiece && !texture_indices.has(adj_piece)) {
             comp.add(adj_piece);
           }
         }
       }
 
       for (const piece of prin)
-        textures.set(piece, 0);
+        texture_indices.set(piece, 0);
       for (const piece of comp)
-        textures.set(piece, 1);
+        texture_indices.set(piece, 1);
     }
 
     const auxiliary_edges = new Set<Edge>();
@@ -1260,9 +1263,9 @@ export namespace PrincipalPuzzleWithTexture {
     return {
       puzzle,
       unshifted_positions,
-      textures,
+      texture_indices,
       auxiliary_edges,
-      sheets: [draw_image(f[0]), draw_image(f[1]), draw_image(f[2]), draw_image(f[3])],
+      textures: [draw_image(f[0]), draw_image(f[1]), draw_image(f[2]), draw_image(f[3])],
     };
   }
 
@@ -1274,7 +1277,7 @@ export namespace PrincipalPuzzleWithTexture {
     scale: number = 1,
   ): PrincipalPuzzleWithTexture<Image> {
     const puzzle = PrincipalPuzzle.make(radius, center_x, R);
-    return _make(puzzle, getTextureFunction(puzzle, scale), draw_image, scale);
+    return _make(puzzle, getTextureFunction(puzzle, scale), draw_image);
   }
 
   export function getPositions<Image>(puzzle: PrincipalPuzzleWithTexture<Image>): Map<Piece, Geo.RigidTransformation> {
@@ -1310,7 +1313,7 @@ export namespace PrincipalPuzzleWithTexture {
     for (const [piece, shapes] of clipped_shapes.principal) {
       for (const shape of shapes) {
         res.add({
-          image: puzzle.sheets[puzzle.textures.get(piece)!],
+          image: puzzle.textures[puzzle.texture_indices.get(piece)!],
           region: shape,
           transformation: positions.get(piece)!,
         });

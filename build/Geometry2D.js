@@ -34,15 +34,15 @@ export function angleBetween(center, start, end) {
     const w = normalize(sub(end, center));
     return Math.atan2(cross(v, w), dot(v, w));
 }
-export function mod1(x) {
-    return (x % 1 + 1) % 1;
+export function mod(x, n) {
+    return (x % n + n) % n;
 }
 // -pi ~ pi  =>  0 ~ 2pi
 export function as0to2pi(angle) {
-    return mod1(angle / (Math.PI * 2)) * (Math.PI * 2);
+    return mod(angle, Math.PI * 2);
 }
 export function inangle(angle, range, n = 1) {
-    const rel_angle = mod1((angle - range[0]) / (Math.PI * 2 * n)) * (Math.PI * 2 * n);
+    const rel_angle = mod(angle - range[0], Math.PI * 2 * n);
     return rel_angle < range[1] - range[0];
 }
 export function transform(point, trans) {
@@ -249,6 +249,40 @@ export function flipPath(path) {
             start: path.segs[path.segs.length - 1].target,
             segs,
         };
+    }
+}
+export function scalePath(path, scale) {
+    const segs = path.segs.map(seg => {
+        if (seg.type === PathSegType.Arc) {
+            return {
+                type: seg.type,
+                target: mul(seg.target, scale),
+                circle: {
+                    center: mul(seg.circle.center, scale),
+                    radius: seg.circle.radius * scale,
+                },
+                len: seg.len,
+                source: seg.source,
+            };
+        }
+        else {
+            return {
+                type: seg.type,
+                target: mul(seg.target, scale),
+                line: {
+                    center: mul(seg.line.center, scale),
+                    direction: seg.line.direction,
+                },
+                len: seg.len * scale,
+                source: seg.source,
+            };
+        }
+    });
+    if (path.is_closed) {
+        return { is_closed: path.is_closed, segs };
+    }
+    else {
+        return { is_closed: path.is_closed, start: mul(path.start, scale), segs };
     }
 }
 export function intersectCircles(circle1, circle2) {

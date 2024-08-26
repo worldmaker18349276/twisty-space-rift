@@ -40,16 +40,16 @@ export function angleBetween(center: Vector2, start: Vector2, end: Vector2): Ang
   return Math.atan2(cross(v, w), dot(v, w));
 }
 
-export function mod1(x: number): number {
-  return (x % 1 + 1) % 1;
+export function mod(x: number, n: number): number {
+  return (x % n + n) % n;
 }
 // -pi ~ pi  =>  0 ~ 2pi
 export function as0to2pi(angle: Angle): Angle {
-  return mod1(angle / (Math.PI*2)) * (Math.PI*2);
+  return mod(angle, Math.PI*2);
 }
 
 export function inangle(angle: Angle, range: [from:Angle, to:Angle], n: number = 1): boolean {
-  const rel_angle = mod1((angle - range[0]) / (Math.PI*2*n)) * (Math.PI*2*n);
+  const rel_angle = mod(angle - range[0], Math.PI*2*n);
   return rel_angle < range[1] - range[0];
 }
 
@@ -200,6 +200,11 @@ export type PathSegLine<T> =
 export type PathSegArc<T> =
   { type: PathSegType.Arc, target: Point, circle: DirectionalCircle, len: Angle, source: T };
 export type PathSeg<T> = PathSegLine<T> | PathSegArc<T>;
+
+// angle between segments should not be larger than PI
+// arc should not be closed to 2PI
+// path should not intersect with itself
+// closed path should be counterclockwise
 export type Path<T> =
   | { is_closed: false, start: Point, segs: PathSeg<T>[] }
   | { is_closed: true, segs: PathSeg<T>[] };
@@ -298,6 +303,40 @@ export function flipPath<T>(path: Path<T>): Path<T> {
       start: path.segs[path.segs.length - 1].target,
       segs,
     };
+  }
+}
+
+export function scalePath<T>(path: Path<T>, scale: number): Path<T> {
+  const segs: PathSeg<T>[] = path.segs.map(seg => {
+    if (seg.type === PathSegType.Arc) {
+      return {
+        type: seg.type,
+        target: mul(seg.target, scale),
+        circle: {
+          center: mul(seg.circle.center, scale),
+          radius: seg.circle.radius * scale,
+        },
+        len: seg.len,
+        source: seg.source,
+      };
+    } else {
+      return {
+        type: seg.type,
+        target: mul(seg.target, scale),
+        line: {
+          center: mul(seg.line.center, scale),
+          direction: seg.line.direction,
+        },
+        len: seg.len * scale,
+        source: seg.source,
+      };
+    }
+  });
+
+  if (path.is_closed) {
+    return { is_closed: path.is_closed, segs };
+  } else {
+    return { is_closed: path.is_closed, start: mul(path.start, scale), segs };
   }
 }
 
