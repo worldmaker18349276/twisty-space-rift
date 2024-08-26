@@ -609,18 +609,23 @@ export namespace PrincipalPuzzle {
   function getRiftAngles(f1: Geo.Point, f2: Geo.Point, offset: number, angle: Geo.Angle): [left_angle:Geo.Angle, right_angle:Geo.Angle] {
     const [middle, is_solid] = getHyperbolaPoint(f1, f2, offset, angle);
 
+    function makeSameTurn(angle: number, ref_angle: number): number {
+      const angle_to_0 = Math.abs(Geo.mod(ref_angle + Math.PI, Math.PI*2) - Math.PI);
+      if (angle_to_0 < Math.PI/2) {
+        const n = Math.floor((ref_angle + Math.PI) / (Math.PI*2));
+        return Geo.mod(angle + Math.PI, Math.PI*2) - Math.PI + n * Math.PI*2;
+      } else {
+        const n = Math.floor(ref_angle / (Math.PI*2));
+        return Geo.mod(angle, Math.PI*2) + n * Math.PI*2;
+      }
+    }
+
     if (offset < 0) {
-      const left_angle = angle;
-      let right_angle = -(Geo.angleBetween(f2, f1, middle) + (is_solid ? 0 : Math.PI));
-      const n = Math.ceil((left_angle - Math.PI) / (Math.PI*2));
-      right_angle = Geo.as0to2pi(right_angle + Math.PI) - Math.PI + n * Math.PI*2;
-      return [left_angle, right_angle];
+      const right_angle = -(Geo.angleBetween(f2, f1, middle) + (is_solid ? 0 : Math.PI));
+      return [angle, makeSameTurn(right_angle, angle)];
     } else {
-      const right_angle = angle;
-      let left_angle = Geo.angleBetween(f1, f2, middle) + (is_solid ? 0 : Math.PI);
-      const n = Math.ceil((right_angle - Math.PI) / (Math.PI*2));
-      left_angle = Geo.as0to2pi(left_angle + Math.PI) - Math.PI + n * Math.PI*2;
-      return [left_angle, right_angle];
+      const left_angle = Geo.angleBetween(f1, f2, middle) + (is_solid ? 0 : Math.PI);
+      return [makeSameTurn(left_angle, angle), angle];
     }
   }
 

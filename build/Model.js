@@ -485,19 +485,24 @@ export var PrincipalPuzzle;
     }
     function getRiftAngles(f1, f2, offset, angle) {
         const [middle, is_solid] = getHyperbolaPoint(f1, f2, offset, angle);
+        function makeSameTurn(angle, ref_angle) {
+            const angle_to_0 = Math.abs(Geo.mod(ref_angle + Math.PI, Math.PI * 2) - Math.PI);
+            if (angle_to_0 < Math.PI / 2) {
+                const n = Math.floor((ref_angle + Math.PI) / (Math.PI * 2));
+                return Geo.mod(angle + Math.PI, Math.PI * 2) - Math.PI + n * Math.PI * 2;
+            }
+            else {
+                const n = Math.floor(ref_angle / (Math.PI * 2));
+                return Geo.mod(angle, Math.PI * 2) + n * Math.PI * 2;
+            }
+        }
         if (offset < 0) {
-            const left_angle = angle;
-            let right_angle = -(Geo.angleBetween(f2, f1, middle) + (is_solid ? 0 : Math.PI));
-            const n = Math.ceil((left_angle - Math.PI) / (Math.PI * 2));
-            right_angle = Geo.as0to2pi(right_angle + Math.PI) - Math.PI + n * Math.PI * 2;
-            return [left_angle, right_angle];
+            const right_angle = -(Geo.angleBetween(f2, f1, middle) + (is_solid ? 0 : Math.PI));
+            return [angle, makeSameTurn(right_angle, angle)];
         }
         else {
-            const right_angle = angle;
-            let left_angle = Geo.angleBetween(f1, f2, middle) + (is_solid ? 0 : Math.PI);
-            const n = Math.ceil((right_angle - Math.PI) / (Math.PI * 2));
-            left_angle = Geo.as0to2pi(left_angle + Math.PI) - Math.PI + n * Math.PI * 2;
-            return [left_angle, right_angle];
+            const left_angle = Geo.angleBetween(f1, f2, middle) + (is_solid ? 0 : Math.PI);
+            return [makeSameTurn(left_angle, angle), angle];
         }
     }
     // left[1]: angle of rift relative to left[0].edges[0], ccw as positive
