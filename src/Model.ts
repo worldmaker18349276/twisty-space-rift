@@ -53,6 +53,22 @@ export namespace Edge {
     }
     return prev;
   }
+  export function walk(edge: Edge, steps: number[]): Edge {
+    for (const step of steps) {
+      if (step > 0) {
+        for (const _ of indices(Math.abs(step))) {
+          edge = Edge.next(edge);
+        }
+      } else {
+        for (const _ of indices(Math.abs(step))) {
+          edge = Edge.prev(edge);
+        }
+      }
+      edge = edge.adj;
+    }
+    return edge;
+  }
+
 }
 
 export enum PieceType { CornerPiece, EdgePiece, CenterPiece, BoundaryPiece, InfPiece }
@@ -335,19 +351,23 @@ export namespace Puzzle {
     };
   }
 
+  export function edgeAt(puzzle: Puzzle, sheet: number, steps: number[]): Edge {
+    return Edge.walk(puzzle.stands[sheet], steps);
+  }
+
   export function makeRamifiedV1(): Puzzle {
     // top pieces
     
     const top = make("_top");
     const bot = make("_bot");
     
-    const top_piece50L = top.stands[0].adj.next_.adj.prev_.adj.next_.aff;
-    const bot_piece50L = bot.stands[0].adj.next_.adj.prev_.adj.next_.aff;
+    const top_piece50L = edgeAt(top, 0, [0, 1, -1, 1, 0]).aff;
+    const bot_piece50L = edgeAt(bot, 0, [0, 1, -1, 1, 0]).aff;
 
-    const top_pieceCL = top.stands[0].adj.next_.adj.prev_.adj.next_.adj.aff;
-    const top_pieceCR = top.stands[0].adj.next_.adj.prev_.adj.prev_.adj.aff;
-    const bot_pieceCL = bot.stands[0].adj.next_.adj.prev_.adj.next_.adj.aff;
-    const bot_pieceCR = bot.stands[0].adj.next_.adj.prev_.adj.prev_.adj.aff;
+    const top_pieceCL = edgeAt(top, 0, [0, 1, -1, 1]).aff;
+    const top_pieceCR = edgeAt(top, 0, [0, 1, -1, -1]).aff;
+    const bot_pieceCL = edgeAt(bot, 0, [0, 1, -1, 1]).aff;
+    const bot_pieceCR = edgeAt(bot, 0, [0, 1, -1, -1]).aff;
 
     // ramify center pieces
 
@@ -382,19 +402,17 @@ export namespace Puzzle {
   // side = true: left
   export function getCircleEdges(puzzle: Puzzle, side: boolean, sheet: number): Edge[] {
     const edge0 =
-      side ?
-        puzzle.stands[sheet].adj.next_.adj.prev_.adj.prev_
-      : puzzle.stands[sheet].adj.next_.adj.prev_.adj.next_;
-    return unrollUntilLoopback(edge0, edge => edge.next_.adj.next_);
+      side ? edgeAt(puzzle, sheet, [0, 1, -1, -1, 0])
+      : edgeAt(puzzle, sheet, [0, 1, -1, 1, 0]);
+    return unrollUntilLoopback(edge0, edge => Edge.walk(edge, [1, 1, 0]));
   }
 
   // side = true: left
   export function getCenterEdges(puzzle: Puzzle, side: boolean, sheet: number): Edge[] {
     const edge0 =
-      side ?
-        puzzle.stands[sheet].adj.next_.adj.prev_.adj.next_
-      : puzzle.stands[sheet].adj.next_.adj.prev_.adj.prev_;
-    return unrollUntilLoopback(edge0, edge => edge.next_.adj.next_.adj.next_);
+      side ? edgeAt(puzzle, sheet, [0, 1, -1, 1, 0])
+      : edgeAt(puzzle, sheet, [0, 1, -1, -1, 0]);
+    return unrollUntilLoopback(edge0, edge => Edge.walk(edge, [1, 1, 1, 0]));
   }
 
   // side = true: left
@@ -455,8 +473,8 @@ export namespace PrincipalPuzzle {
     console.assert(R > center_x + radius);
 
     const space = Puzzle.makeRamifiedV1();
-    const left_center_piece = space.stands[0].adj.next_.adj.prev_.adj.next_.adj.aff;
-    const right_center_piece = space.stands[1].adj.next_.adj.prev_.adj.prev_.adj.aff;
+    const left_center_piece = Puzzle.edgeAt(space, 0, [0, 1, -1, 1]).aff;
+    const right_center_piece = Puzzle.edgeAt(space, 1, [0, 1, -1, -1]).aff;
 
     return {
       radius,
@@ -753,43 +771,43 @@ export namespace PrincipalPuzzle {
       ];
 
       let left_corner_arcs = corner_arcs0;
-      const left_circle_edge0 = puzzle.space.stands[0].adj.next_.adj;
-      for (const edge of unrollUntilLoopback(left_circle_edge0, edge => edge.next_.adj.next_.next_.adj.next_)) {
+      const left_circle_edge0 = Puzzle.edgeAt(puzzle.space, 0, [0, 1]);
+      for (const edge of unrollUntilLoopback(left_circle_edge0, edge => Edge.walk(edge, [1, 2, 1, 0]))) {
         if (!arcs.has(edge)) {
           arcs.set(edge, left_corner_arcs[0]);
-          arcs.set(edge.next_, left_corner_arcs[1]);
-          arcs.set(edge.next_.next_, left_corner_arcs[2]);
+          arcs.set(Edge.walk(edge, [1, 0]), left_corner_arcs[1]);
+          arcs.set(Edge.walk(edge, [2, 0]), left_corner_arcs[2]);
         }
         left_corner_arcs = left_corner_arcs.map(arc => transformArc(arc, left_trans));
       }
 
       let right_corner_arcs = corner_arcs0;
-      const right_circle_edge0 = puzzle.space.stands[0].adj.next_.adj.next_;
-      for (const edge of unrollUntilLoopback(right_circle_edge0, seg => seg.next_.adj.next_.next_.adj.next_)) {
+      const right_circle_edge0 = Puzzle.edgeAt(puzzle.space, 0, [0, 1, 1, 0]);
+      for (const edge of unrollUntilLoopback(right_circle_edge0, edge => Edge.walk(edge, [1, 2, 1, 0]))) {
         if (!arcs.has(edge)) {
           arcs.set(edge, right_corner_arcs[1]);
-          arcs.set(edge.next_, right_corner_arcs[2]);
-          arcs.set(edge.next_.next_, right_corner_arcs[0]);
+          arcs.set(Edge.walk(edge, [1, 0]), right_corner_arcs[2]);
+          arcs.set(Edge.walk(edge, [2, 0]), right_corner_arcs[0]);
         }
         right_corner_arcs = right_corner_arcs.map(arc => transformArc(arc, right_trans));
       }
 
       let left_edge_arcs = edge_arcs0;
-      const left_circle_seg0 = puzzle.space.stands[0].adj.next_.adj.prev_.adj.prev_;
-      for (const seg of unrollUntilLoopback(left_circle_seg0, seg => seg.next_.adj.next_.next_.adj.next_)) {
-        if (!arcs.has(seg)) {
-          arcs.set(seg, left_edge_arcs[1]);
-          arcs.set(seg.next_.next_, left_edge_arcs[0]);
+      const left_circle_seg0 = Puzzle.edgeAt(puzzle.space, 0, [0, 1, -1, -1, 0]);
+      for (const edge of unrollUntilLoopback(left_circle_seg0, edge => Edge.walk(edge, [1, 2, 1, 0]))) {
+        if (!arcs.has(edge)) {
+          arcs.set(edge, left_edge_arcs[1]);
+          arcs.set(Edge.walk(edge, [2, 0]), left_edge_arcs[0]);
         }
         left_edge_arcs = left_edge_arcs.map(arc => transformArc(arc, left_trans));
       }
 
       let right_edge_arcs = edge_arcs0;
-      const right_circle_seg0 = puzzle.space.stands[0].adj.next_.adj.prev_.adj.next_;
-      for (const seg of unrollUntilLoopback(right_circle_seg0, seg => seg.next_.adj.next_.next_.adj.next_)) {
-        if (!arcs.has(seg)) {
-          arcs.set(seg, right_edge_arcs[0]);
-          arcs.set(seg.next_.next_, right_edge_arcs[1]);
+      const right_circle_seg0 = Puzzle.edgeAt(puzzle.space, 0, [0, 1, -1, 1, 0]);
+      for (const edge of unrollUntilLoopback(right_circle_seg0, edge => Edge.walk(edge, [1, 2, 1, 0]))) {
+        if (!arcs.has(edge)) {
+          arcs.set(edge, right_edge_arcs[0]);
+          arcs.set(Edge.walk(edge, [2, 0]), right_edge_arcs[1]);
         }
         right_edge_arcs = right_edge_arcs.map(arc => transformArc(arc, right_trans));
       }
@@ -838,12 +856,10 @@ export namespace PrincipalPuzzle {
     }
 
     {
-      const pieceBR = puzzle.space.stands[0].aff;
-      const pieceBL = pieceBR.edges[9].adj.aff;
-      const pieceBR_ = puzzle.space.stands[1].aff;
-      const pieceBL_ = pieceBR_.edges[9].adj.aff;
-      const pieceINF = pieceBR.edges[10].adj.aff;
-      const pieceINF_ = pieceBR_.edges[10].adj.aff;
+      const pieceBR = Puzzle.edgeAt(puzzle.space, 0, []).aff;
+      const pieceBL = Puzzle.edgeAt(puzzle.space, 0, [-1, 0]).aff;
+      const pieceBR_ = Puzzle.edgeAt(puzzle.space, 1, []).aff;
+      const pieceBL_ = Puzzle.edgeAt(puzzle.space, 1, [-1, 0]).aff;
 
       const circle: Geo.DirectionalCircle = { center: [0, 0], radius: puzzle.R };
       const circle_: Geo.DirectionalCircle = { center: [0, 0], radius: -puzzle.R };
@@ -861,13 +877,6 @@ export namespace PrincipalPuzzle {
         path.segs.push(Geo.makePathSegLine(p1, p2, piece.edges[9]));
         path.segs.push(Geo.makePathSegArc(p2, p3, circle, piece.edges[10]));
         path.segs.push(Geo.makePathSegLine(p3, p4, piece.edges[11]));
-        result.set(piece, path);
-      }
-
-      for (const piece of [pieceINF, pieceINF_]) {
-        const path: Geo.Path<Edge> = { is_closed: true, segs: [] };
-        path.segs.push(Geo.makePathSegArc([0, puzzle.R], [0, -puzzle.R], circle_, piece.edges[0]));
-        path.segs.push(Geo.makePathSegArc([0, -puzzle.R], [0, puzzle.R], circle_, piece.edges[1]));
         result.set(piece, path);
       }
     }
@@ -1157,17 +1166,17 @@ export namespace PrincipalPuzzleWithTexture {
 
     const texture_indices = new Map<Piece, number>();
     {
-      const edgeL = puzzle.space.stands[0].adj.next_.adj.prev_.adj.next_;
-      const edgeR = puzzle.space.stands[1].adj.next_.adj.prev_.adj.prev_;
+      const edgeL = Puzzle.edgeAt(puzzle.space, 0, [0, 1, -1, 1, 0]);
+      const edgeR = Puzzle.edgeAt(puzzle.space, 1, [0, 1, -1, -1, 0]);
       texture_indices.set(edgeL.aff, 3);
-      texture_indices.set(edgeL.adj.aff, 3);
-      texture_indices.set(edgeL.next_.next_.adj.aff, 3);
+      texture_indices.set(Edge.walk(edgeL, [0]).aff, 3);
+      texture_indices.set(Edge.walk(edgeL, [2]).aff, 3);
       texture_indices.set(edgeR.aff, 2);
-      texture_indices.set(edgeR.adj.aff, 2);
-      texture_indices.set(edgeR.next_.next_.adj.aff, 2);
+      texture_indices.set(Edge.walk(edgeR, [0]).aff, 2);
+      texture_indices.set(Edge.walk(edgeR, [2]).aff, 2);
       
       const prin = new Set<Piece>();
-      prin.add(puzzle.space.stands[0].aff);
+      prin.add(Puzzle.edgeAt(puzzle.space, 0, []).aff);
       for (const piece of prin) {
         for (const edge of piece.edges) {
           const adj_piece = edge.adj.aff;
@@ -1178,7 +1187,7 @@ export namespace PrincipalPuzzleWithTexture {
       }
       
       const comp = new Set<Piece>();
-      comp.add(puzzle.space.stands[1].aff);
+      comp.add(Puzzle.edgeAt(puzzle.space, 1, []).aff);
       for (const piece of comp) {
         for (const edge of piece.edges) {
           const adj_piece = edge.adj.aff;
