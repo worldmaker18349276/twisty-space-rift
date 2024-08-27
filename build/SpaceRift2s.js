@@ -116,10 +116,16 @@ export class SpaceRift2s {
         if (this.draw_frame) {
             ctx.lineWidth = 1;
             ctx.strokeStyle = "black";
-            for (const [_piece, path] of Model.PrincipalPuzzle.calculateShapes(this.model.puzzle)) {
-                const hide = path.segs.map(seg => seg.source.auxiliary);
+            for (const clipped_image of clipped_images) {
+                const path = clipped_image.region;
+                const hide = path.segs.map(seg => seg.source.type !== Geo.CutSourceType.Seg
+                    || seg.source.ref.source.auxiliary);
                 ctx.stroke(Draw.toCanvasPath(this.cs, path, hide));
             }
+            // for (const [_piece, path] of Model.PrincipalPuzzle.calculateShapes(this.model.puzzle)) {
+            //   const hide = path.segs.map(seg => seg.source.auxiliary);
+            //   ctx.stroke(Draw.toCanvasPath(this.cs, path, hide));
+            // }
         }
         ctx.lineWidth = 3;
         ctx.strokeStyle = "red";
