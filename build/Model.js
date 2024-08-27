@@ -25,6 +25,27 @@ function append(map, key, values) {
         slots.push(...values);
     }
 }
+export var Edge;
+(function (Edge) {
+    function next(edge) {
+        console.assert(!edge.auxiliary);
+        let next = edge.next_;
+        while (next.auxiliary) {
+            next = next.adj.next_;
+        }
+        return next;
+    }
+    Edge.next = next;
+    function prev(edge) {
+        console.assert(!edge.auxiliary);
+        let prev = edge.prev_;
+        while (prev.auxiliary) {
+            prev = prev.adj.prev_;
+        }
+        return prev;
+    }
+    Edge.prev = prev;
+})(Edge || (Edge = {}));
 export var PieceType;
 (function (PieceType) {
     PieceType[PieceType["CornerPiece"] = 0] = "CornerPiece";
@@ -43,18 +64,24 @@ export var Puzzle;
             adj: undefined,
             auxiliary: false,
         };
-        edge.next = edge;
-        edge.prev = edge;
+        edge.next_ = edge;
+        edge.prev_ = edge;
         edge.adj = edge;
         return edge;
     }
     function linkEdges(edge1, edge2) {
-        edge1.next = edge2;
-        edge2.prev = edge1;
+        edge1.next_ = edge2;
+        edge2.prev_ = edge1;
     }
     function adjEdges(edge1, edge2) {
         edge1.adj = edge2;
         edge2.adj = edge1;
+    }
+    function swapAdj(edge1, edge2) {
+        const adj_edge1 = edge1.adj;
+        const adj_edge2 = edge2.adj;
+        adjEdges(edge1, adj_edge2);
+        adjEdges(edge2, adj_edge1);
     }
     function makeEdges(piece, n) {
         piece.edges = indices(n).map(_ => makeEdge(piece));
@@ -70,46 +97,11 @@ export var Puzzle;
         return makeEdges({ type: PieceType.EdgePiece, edges: [], name }, 4);
     }
     function makeBoundaryPiece(name) {
-        return makeEdges({ type: PieceType.BoundaryPiece, edges: [], name }, 12);
-    }
-    function makeInfPiece(name) {
-        return makeEdges({ type: PieceType.InfPiece, edges: [], name }, 2);
-    }
-    function makeCenterPiece(name) {
-        return makeEdges({ type: PieceType.CenterPiece, edges: [], name }, 4);
-    }
-    function make() {
-        // top pieces
-        // edges[0]: edge started with center piece
-        // piece0L: piece touched above intersection point
-        const piece0L = makeCornerPiece("0L");
-        const piece1L = makeCornerPiece("1L");
-        const piece2L = makeCornerPiece("2L");
-        const piece3L = makeCornerPiece("3L");
-        const piece4L = makeCornerPiece("4L");
-        // piece0R: piece touched below intersection point
-        const piece0R = makeCornerPiece("0R");
-        const piece1R = makeCornerPiece("1R");
-        const piece2R = makeCornerPiece("2R");
-        const piece3R = makeCornerPiece("3R");
-        const piece4R = makeCornerPiece("4R");
-        // edges[0]: edge adj to center piece
-        // piece01L: piece between piece0l and piece1l
-        const piece01L = makeEdgePiece("01L");
-        const piece12L = makeEdgePiece("12L");
-        const piece23L = makeEdgePiece("23L");
-        const piece34L = makeEdgePiece("34L");
-        const piece45L = makeEdgePiece("45L");
-        const piece01R = makeEdgePiece("01R");
-        const piece12R = makeEdgePiece("12R");
-        const piece23R = makeEdgePiece("23R");
-        const piece34R = makeEdgePiece("34R");
-        const piece45R = makeEdgePiece("45R");
         // edges[0]: edge started with below intersection point
-        const pieceBL = makeBoundaryPiece("BL");
+        const pieceBL = makeEdges({ type: PieceType.BoundaryPiece, edges: [], name: name + "L" }, 12);
         // edges[0]: edge started with above intersection point
-        const pieceBR = makeBoundaryPiece("BR");
-        const pieceINF = makeInfPiece("INF");
+        const pieceBR = makeEdges({ type: PieceType.BoundaryPiece, edges: [], name: name + "R" }, 12);
+        const pieceINF = makeEdges({ type: PieceType.InfPiece, edges: [], name: name + "INF" }, 2);
         pieceBL.edges[9].auxiliary = true;
         pieceBL.edges[10].auxiliary = true;
         pieceBL.edges[11].auxiliary = true;
@@ -118,92 +110,87 @@ export var Puzzle;
         pieceBR.edges[11].auxiliary = true;
         pieceINF.edges[0].auxiliary = true;
         pieceINF.edges[1].auxiliary = true;
-        // bottom pieces
-        const piece0L_ = makeCornerPiece("0L_");
-        const piece1L_ = makeCornerPiece("1L_");
-        const piece2L_ = makeCornerPiece("2L_");
-        const piece3L_ = makeCornerPiece("3L_");
-        const piece4L_ = makeCornerPiece("4L_");
-        const piece0R_ = makeCornerPiece("0R_");
-        const piece1R_ = makeCornerPiece("1R_");
-        const piece2R_ = makeCornerPiece("2R_");
-        const piece3R_ = makeCornerPiece("3R_");
-        const piece4R_ = makeCornerPiece("4R_");
-        const piece01L_ = makeEdgePiece("01L_");
-        const piece12L_ = makeEdgePiece("12L_");
-        const piece23L_ = makeEdgePiece("23L_");
-        const piece34L_ = makeEdgePiece("34L_");
-        const piece45L_ = makeEdgePiece("45L_");
-        const piece01R_ = makeEdgePiece("01R_");
-        const piece12R_ = makeEdgePiece("12R_");
-        const piece23R_ = makeEdgePiece("23R_");
-        const piece34R_ = makeEdgePiece("34R_");
-        const piece45R_ = makeEdgePiece("45R_");
-        const pieceBL_ = makeBoundaryPiece("BL_");
-        const pieceBR_ = makeBoundaryPiece("BR_");
-        const pieceINF_ = makeInfPiece("INF_");
-        pieceBL_.edges[9].auxiliary = true;
-        pieceBL_.edges[10].auxiliary = true;
-        pieceBL_.edges[11].auxiliary = true;
-        pieceBR_.edges[9].auxiliary = true;
-        pieceBR_.edges[10].auxiliary = true;
-        pieceBR_.edges[11].auxiliary = true;
-        pieceINF_.edges[0].auxiliary = true;
-        pieceINF_.edges[1].auxiliary = true;
-        // ramified pieces and middle pieces
-        // edges[0]: edge outgoing the center
-        // pieceCL1.edges[1]: edge outgoing the branch cut
-        const pieceCL1 = makeCenterPiece("CL1");
-        const pieceCL2 = makeCenterPiece("CL2");
-        const pieceCL3 = makeCenterPiece("CL3");
-        const pieceCL1_ = makeCenterPiece("CL1_");
-        const pieceCL2_ = makeCenterPiece("CL2_");
-        const pieceCL3_ = makeCenterPiece("CL3_");
-        pieceCL1.edges[0].auxiliary = true;
-        pieceCL1.edges[3].auxiliary = true;
-        pieceCL2.edges[0].auxiliary = true;
-        pieceCL2.edges[3].auxiliary = true;
-        pieceCL3.edges[0].auxiliary = true;
-        pieceCL3.edges[3].auxiliary = true;
-        pieceCL1_.edges[0].auxiliary = true;
-        pieceCL1_.edges[3].auxiliary = true;
-        pieceCL2_.edges[0].auxiliary = true;
-        pieceCL2_.edges[3].auxiliary = true;
-        pieceCL3_.edges[0].auxiliary = true;
-        pieceCL3_.edges[3].auxiliary = true;
-        // pieceCR1.edges[1]: edge outgoing the branch cut
-        const pieceCR1 = makeCenterPiece("CR1");
-        const pieceCR2 = makeCenterPiece("CR2");
-        const pieceCR3 = makeCenterPiece("CR3");
-        const pieceCR1_ = makeCenterPiece("CR1_");
-        const pieceCR2_ = makeCenterPiece("CR2_");
-        const pieceCR3_ = makeCenterPiece("CR3_");
-        pieceCR1.edges[0].auxiliary = true;
-        pieceCR1.edges[3].auxiliary = true;
-        pieceCR2.edges[0].auxiliary = true;
-        pieceCR2.edges[3].auxiliary = true;
-        pieceCR3.edges[0].auxiliary = true;
-        pieceCR3.edges[3].auxiliary = true;
-        pieceCR1_.edges[0].auxiliary = true;
-        pieceCR1_.edges[3].auxiliary = true;
-        pieceCR2_.edges[0].auxiliary = true;
-        pieceCR2_.edges[3].auxiliary = true;
-        pieceCR3_.edges[0].auxiliary = true;
-        pieceCR3_.edges[3].auxiliary = true;
-        // edges[0]: edge outgoing the branch cut
-        // edges[0]: adj to left center
-        const piece50L = makeEdgePiece("50L");
-        // edges[0]: adj to right center
-        const piece50R = makeEdgePiece("50R");
-        // adj boundary
         adjEdges(pieceBL.edges[9], pieceBR.edges[11]);
         adjEdges(pieceBL.edges[11], pieceBR.edges[9]);
         adjEdges(pieceBR.edges[10], pieceINF.edges[0]);
         adjEdges(pieceBL.edges[10], pieceINF.edges[1]);
-        adjEdges(pieceBL_.edges[9], pieceBR_.edges[11]);
-        adjEdges(pieceBL_.edges[11], pieceBR_.edges[9]);
-        adjEdges(pieceBR_.edges[10], pieceINF_.edges[0]);
-        adjEdges(pieceBL_.edges[10], pieceINF_.edges[1]);
+        return [pieceBL, pieceBR, pieceINF];
+    }
+    function makeCenterPiece(name) {
+        return makeEdges({ type: PieceType.CenterPiece, edges: [], name }, 6);
+    }
+    function ramifyPiece(name, pieces, n) {
+        const edges = pieces.flatMap(piece => [...piece.edges.slice(n), ...piece.edges.slice(0, n)]);
+        const type = pieces[0].type;
+        const piece = { type, edges, name };
+        for (const i of indices(edges.length)) {
+            linkEdges(edges[i], edges[(i + 1) % edges.length]);
+            edges[i].aff = piece;
+        }
+        return piece;
+    }
+    function chunkPiece(name, piece, step) {
+        console.assert(piece.edges.length % step == 0);
+        const subpieces = [];
+        for (const n of indices(piece.edges.length / step)) {
+            const type = piece.type;
+            const subpiece = { type, edges: [], name: `${name}${n}` };
+            const edges = piece.edges.slice(n * step, (n + 1) * step);
+            edges.unshift(makeEdge(subpiece));
+            edges.push(makeEdge(subpiece));
+            for (const i of indices(edges.length)) {
+                linkEdges(edges[i], edges[(i + 1) % edges.length]);
+                edges[i].aff = subpiece;
+            }
+            subpiece.edges = edges;
+            subpieces.push(subpiece);
+        }
+        for (const n of indices(subpieces.length)) {
+            const prev_subpiece = subpieces[n];
+            const next_subpiece = subpieces[(n + 1) % subpieces.length];
+            const prev_edge = prev_subpiece.edges[prev_subpiece.edges.length - 1];
+            const next_edge = next_subpiece.edges[0];
+            adjEdges(prev_edge, next_edge);
+            prev_edge.auxiliary = true;
+            next_edge.auxiliary = true;
+        }
+        return subpieces;
+    }
+    function make(suffix = "") {
+        // edges[0]: edge started with center piece
+        // piece0L: piece touched above intersection point
+        const piece0L = makeCornerPiece("0L" + suffix);
+        const piece1L = makeCornerPiece("1L" + suffix);
+        const piece2L = makeCornerPiece("2L" + suffix);
+        const piece3L = makeCornerPiece("3L" + suffix);
+        const piece4L = makeCornerPiece("4L" + suffix);
+        // piece0R: piece touched below intersection point
+        const piece0R = makeCornerPiece("0R" + suffix);
+        const piece1R = makeCornerPiece("1R" + suffix);
+        const piece2R = makeCornerPiece("2R" + suffix);
+        const piece3R = makeCornerPiece("3R" + suffix);
+        const piece4R = makeCornerPiece("4R" + suffix);
+        // edges[0]: edge adj to center piece
+        // piece01L: piece between piece0l and piece1l
+        const piece01L = makeEdgePiece("01L" + suffix);
+        const piece12L = makeEdgePiece("12L" + suffix);
+        const piece23L = makeEdgePiece("23L" + suffix);
+        const piece34L = makeEdgePiece("34L" + suffix);
+        const piece45L = makeEdgePiece("45L" + suffix);
+        const piece01R = makeEdgePiece("01R" + suffix);
+        const piece12R = makeEdgePiece("12R" + suffix);
+        const piece23R = makeEdgePiece("23R" + suffix);
+        const piece34R = makeEdgePiece("34R" + suffix);
+        const piece45R = makeEdgePiece("45R" + suffix);
+        // pieceBL.edges[0]: edge started with below intersection point
+        // pieceBR.edges[0]: edge started with above intersection point
+        const [pieceBL, pieceBR, pieceINF] = makeBoundaryPiece("B" + suffix);
+        // edges[0]: edge adjacent to center edge piece
+        const pieceCL = makeCenterPiece("CL" + suffix);
+        const pieceCR = makeCenterPiece("CR" + suffix);
+        // edges[0]: adj to left center
+        const piece50L = makeEdgePiece("50L" + suffix);
+        // adj boundary
         adjEdges(piece01L.edges[2], pieceBL.edges[9 - 1 - 0]);
         adjEdges(piece12L.edges[2], pieceBL.edges[9 - 1 - 2]);
         adjEdges(piece23L.edges[2], pieceBL.edges[9 - 1 - 4]);
@@ -222,107 +209,42 @@ export var Puzzle;
         adjEdges(piece2R.edges[1], pieceBR.edges[9 - 1 - 3]);
         adjEdges(piece3R.edges[1], pieceBR.edges[9 - 1 - 5]);
         adjEdges(piece4R.edges[1], pieceBR.edges[9 - 1 - 7]);
-        adjEdges(piece01L_.edges[2], pieceBL_.edges[9 - 1 - 0]);
-        adjEdges(piece12L_.edges[2], pieceBL_.edges[9 - 1 - 2]);
-        adjEdges(piece23L_.edges[2], pieceBL_.edges[9 - 1 - 4]);
-        adjEdges(piece34L_.edges[2], pieceBL_.edges[9 - 1 - 6]);
-        adjEdges(piece45L_.edges[2], pieceBL_.edges[9 - 1 - 8]);
-        adjEdges(piece1L_.edges[1], pieceBL_.edges[9 - 1 - 1]);
-        adjEdges(piece2L_.edges[1], pieceBL_.edges[9 - 1 - 3]);
-        adjEdges(piece3L_.edges[1], pieceBL_.edges[9 - 1 - 5]);
-        adjEdges(piece4L_.edges[1], pieceBL_.edges[9 - 1 - 7]);
-        adjEdges(piece01R_.edges[2], pieceBR_.edges[9 - 1 - 0]);
-        adjEdges(piece12R_.edges[2], pieceBR_.edges[9 - 1 - 2]);
-        adjEdges(piece23R_.edges[2], pieceBR_.edges[9 - 1 - 4]);
-        adjEdges(piece34R_.edges[2], pieceBR_.edges[9 - 1 - 6]);
-        adjEdges(piece45R_.edges[2], pieceBR_.edges[9 - 1 - 8]);
-        adjEdges(piece1R_.edges[1], pieceBR_.edges[9 - 1 - 1]);
-        adjEdges(piece2R_.edges[1], pieceBR_.edges[9 - 1 - 3]);
-        adjEdges(piece3R_.edges[1], pieceBR_.edges[9 - 1 - 5]);
-        adjEdges(piece4R_.edges[1], pieceBR_.edges[9 - 1 - 7]);
         // adj center
-        adjEdges(pieceCL1.edges[3], pieceCL2.edges[0]);
-        adjEdges(pieceCL2.edges[3], pieceCL3.edges[0]);
-        adjEdges(pieceCL3.edges[3], pieceCL1_.edges[0]);
-        adjEdges(pieceCL1_.edges[3], pieceCL2_.edges[0]);
-        adjEdges(pieceCL2_.edges[3], pieceCL3_.edges[0]);
-        adjEdges(pieceCL3_.edges[3], pieceCL1.edges[0]);
-        adjEdges(pieceCR1.edges[3], pieceCR2.edges[0]);
-        adjEdges(pieceCR2.edges[3], pieceCR3.edges[0]);
-        adjEdges(pieceCR3.edges[3], pieceCR1_.edges[0]);
-        adjEdges(pieceCR1_.edges[3], pieceCR2_.edges[0]);
-        adjEdges(pieceCR2_.edges[3], pieceCR3_.edges[0]);
-        adjEdges(pieceCR3_.edges[3], pieceCR1.edges[0]);
-        adjEdges(piece50R.edges[2], pieceCL1.edges[1]);
-        adjEdges(piece01L.edges[0], pieceCL1.edges[2]);
-        adjEdges(piece12L.edges[0], pieceCL2.edges[1]);
-        adjEdges(piece23L.edges[0], pieceCL2.edges[2]);
-        adjEdges(piece34L.edges[0], pieceCL3.edges[1]);
-        adjEdges(piece45L.edges[0], pieceCL3.edges[2]);
-        adjEdges(piece50L.edges[0], pieceCL1_.edges[1]);
-        adjEdges(piece01L_.edges[0], pieceCL1_.edges[2]);
-        adjEdges(piece12L_.edges[0], pieceCL2_.edges[1]);
-        adjEdges(piece23L_.edges[0], pieceCL2_.edges[2]);
-        adjEdges(piece34L_.edges[0], pieceCL3_.edges[1]);
-        adjEdges(piece45L_.edges[0], pieceCL3_.edges[2]);
-        adjEdges(piece50L.edges[2], pieceCR1.edges[1]);
-        adjEdges(piece01R.edges[0], pieceCR1.edges[2]);
-        adjEdges(piece12R.edges[0], pieceCR2.edges[1]);
-        adjEdges(piece23R.edges[0], pieceCR2.edges[2]);
-        adjEdges(piece34R.edges[0], pieceCR3.edges[1]);
-        adjEdges(piece45R.edges[0], pieceCR3.edges[2]);
-        adjEdges(piece50R.edges[0], pieceCR1_.edges[1]);
-        adjEdges(piece01R_.edges[0], pieceCR1_.edges[2]);
-        adjEdges(piece12R_.edges[0], pieceCR2_.edges[1]);
-        adjEdges(piece23R_.edges[0], pieceCR2_.edges[2]);
-        adjEdges(piece34R_.edges[0], pieceCR3_.edges[1]);
-        adjEdges(piece45R_.edges[0], pieceCR3_.edges[2]);
+        adjEdges(piece50L.edges[0], pieceCL.edges[0]);
+        adjEdges(piece01L.edges[0], pieceCL.edges[1]);
+        adjEdges(piece12L.edges[0], pieceCL.edges[2]);
+        adjEdges(piece23L.edges[0], pieceCL.edges[3]);
+        adjEdges(piece34L.edges[0], pieceCL.edges[4]);
+        adjEdges(piece45L.edges[0], pieceCL.edges[5]);
+        adjEdges(piece50L.edges[2], pieceCR.edges[0]);
+        adjEdges(piece01R.edges[0], pieceCR.edges[1]);
+        adjEdges(piece12R.edges[0], pieceCR.edges[2]);
+        adjEdges(piece23R.edges[0], pieceCR.edges[3]);
+        adjEdges(piece34R.edges[0], pieceCR.edges[4]);
+        adjEdges(piece45R.edges[0], pieceCR.edges[5]);
         // adj corner, edge
         adjEdges(piece0L.edges[2], piece01L.edges[1]);
         adjEdges(piece1L.edges[2], piece12L.edges[1]);
         adjEdges(piece2L.edges[2], piece23L.edges[1]);
         adjEdges(piece3L.edges[2], piece34L.edges[1]);
         adjEdges(piece4L.edges[2], piece45L.edges[1]);
+        adjEdges(piece0L.edges[0], piece50L.edges[3]);
         adjEdges(piece1L.edges[0], piece01L.edges[3]);
         adjEdges(piece2L.edges[0], piece12L.edges[3]);
         adjEdges(piece3L.edges[0], piece23L.edges[3]);
         adjEdges(piece4L.edges[0], piece34L.edges[3]);
         adjEdges(piece0R.edges[1], piece45L.edges[3]);
-        adjEdges(piece0L_.edges[2], piece01L_.edges[1]);
-        adjEdges(piece1L_.edges[2], piece12L_.edges[1]);
-        adjEdges(piece2L_.edges[2], piece23L_.edges[1]);
-        adjEdges(piece3L_.edges[2], piece34L_.edges[1]);
-        adjEdges(piece4L_.edges[2], piece45L_.edges[1]);
-        adjEdges(piece1L_.edges[0], piece01L_.edges[3]);
-        adjEdges(piece2L_.edges[0], piece12L_.edges[3]);
-        adjEdges(piece3L_.edges[0], piece23L_.edges[3]);
-        adjEdges(piece4L_.edges[0], piece34L_.edges[3]);
-        adjEdges(piece0R_.edges[1], piece45L_.edges[3]);
         adjEdges(piece0R.edges[2], piece01R.edges[1]);
         adjEdges(piece1R.edges[2], piece12R.edges[1]);
         adjEdges(piece2R.edges[2], piece23R.edges[1]);
         adjEdges(piece3R.edges[2], piece34R.edges[1]);
         adjEdges(piece4R.edges[2], piece45R.edges[1]);
+        adjEdges(piece0R.edges[0], piece50L.edges[1]);
         adjEdges(piece1R.edges[0], piece01R.edges[3]);
         adjEdges(piece2R.edges[0], piece12R.edges[3]);
         adjEdges(piece3R.edges[0], piece23R.edges[3]);
         adjEdges(piece4R.edges[0], piece34R.edges[3]);
         adjEdges(piece0L.edges[1], piece45R.edges[3]);
-        adjEdges(piece0R_.edges[2], piece01R_.edges[1]);
-        adjEdges(piece1R_.edges[2], piece12R_.edges[1]);
-        adjEdges(piece2R_.edges[2], piece23R_.edges[1]);
-        adjEdges(piece3R_.edges[2], piece34R_.edges[1]);
-        adjEdges(piece4R_.edges[2], piece45R_.edges[1]);
-        adjEdges(piece1R_.edges[0], piece01R_.edges[3]);
-        adjEdges(piece2R_.edges[0], piece12R_.edges[3]);
-        adjEdges(piece3R_.edges[0], piece23R_.edges[3]);
-        adjEdges(piece4R_.edges[0], piece34R_.edges[3]);
-        adjEdges(piece0L_.edges[1], piece45R_.edges[3]);
-        // adj middle edge pieces
-        adjEdges(piece50L.edges[1], piece0R.edges[0]);
-        adjEdges(piece50L.edges[3], piece0L_.edges[0]);
-        adjEdges(piece50R.edges[1], piece0L.edges[0]);
-        adjEdges(piece50R.edges[3], piece0R_.edges[0]);
         return {
             pieces: [
                 piece0L,
@@ -348,62 +270,61 @@ export var Puzzle;
                 pieceBL,
                 pieceBR,
                 pieceINF,
-                piece0L_,
-                piece1L_,
-                piece2L_,
-                piece3L_,
-                piece4L_,
-                piece0R_,
-                piece1R_,
-                piece2R_,
-                piece3R_,
-                piece4R_,
-                piece01L_,
-                piece12L_,
-                piece23L_,
-                piece34L_,
-                piece45L_,
-                piece01R_,
-                piece12R_,
-                piece23R_,
-                piece34R_,
-                piece45R_,
-                pieceBL_,
-                pieceBR_,
-                pieceINF_,
-                pieceCL1,
-                pieceCL2,
-                pieceCL3,
-                pieceCL1_,
-                pieceCL2_,
-                pieceCL3_,
-                pieceCR1,
-                pieceCR2,
-                pieceCR3,
-                pieceCR1_,
-                pieceCR2_,
-                pieceCR3_,
+                pieceCL,
+                pieceCR,
                 piece50L,
-                piece50R,
             ],
-            stands: [pieceBR.edges[0], pieceBR_.edges[0]],
+            stands: [pieceBR.edges[0]],
         };
     }
     Puzzle.make = make;
+    function makeRamifiedV1() {
+        // top pieces
+        const top = make("_top");
+        const bot = make("_bot");
+        const top_piece50L = top.stands[0].adj.next_.adj.prev_.adj.next_.aff;
+        const bot_piece50L = bot.stands[0].adj.next_.adj.prev_.adj.next_.aff;
+        const top_pieceCL = top.stands[0].adj.next_.adj.prev_.adj.next_.adj.aff;
+        const top_pieceCR = top.stands[0].adj.next_.adj.prev_.adj.prev_.adj.aff;
+        const bot_pieceCL = bot.stands[0].adj.next_.adj.prev_.adj.next_.adj.aff;
+        const bot_pieceCR = bot.stands[0].adj.next_.adj.prev_.adj.prev_.adj.aff;
+        // ramify center pieces
+        // pieceCLs[0].edges[1]: edge outgoing the branch cut
+        const pieceCLs = chunkPiece("CL", ramifyPiece("", [top_pieceCL, bot_pieceCL], 0), 2);
+        // pieceCRs[0].edges[1]: edge outgoing the branch cut
+        const pieceCRs = chunkPiece("CR", ramifyPiece("", [top_pieceCR, bot_pieceCR], 0), 2);
+        // top_piece50L.edges[0]: adj to left center, edge outgoing the branch cut
+        // bot_piece50L.edges[2]: adj to right center, edge incoming the branch cut
+        swapAdj(top_piece50L.edges[3], bot_piece50L.edges[3]);
+        swapAdj(top_piece50L.edges[0], bot_piece50L.edges[0]);
+        const pieces = [
+            ...top.pieces,
+            ...bot.pieces,
+            ...pieceCLs,
+            ...pieceCRs,
+        ].filter(p => ![
+            top_pieceCL,
+            top_pieceCR,
+            bot_pieceCL,
+            bot_pieceCR,
+        ].includes(p));
+        return { pieces, stands: [top.stands[0], bot.stands[0]] };
+    }
+    Puzzle.makeRamifiedV1 = makeRamifiedV1;
     // side = true: left
     function getCircleEdges(puzzle, side, sheet) {
         const edge0 = side ?
-            puzzle.stands[sheet].adj.next.adj.prev.adj.prev
-            : puzzle.stands[sheet].adj.next.adj.prev.adj.next;
-        return unrollUntilLoopback(edge0, edge => edge.next.adj.next);
+            puzzle.stands[sheet].adj.next_.adj.prev_.adj.prev_
+            : puzzle.stands[sheet].adj.next_.adj.prev_.adj.next_;
+        return unrollUntilLoopback(edge0, edge => edge.next_.adj.next_);
     }
     Puzzle.getCircleEdges = getCircleEdges;
     // side = true: left
     function getCenterEdges(puzzle, side, sheet) {
         const edge0 = side ?
-            puzzle.stands[sheet].adj.next.adj.prev.adj.next
-            : puzzle.stands[sheet].adj.next.adj.prev.adj.prev;
-        return unrollUntilLoopback(edge0, edge => edge.next.adj.next.adj.next);
+            puzzle.stands[sheet].adj.next_.adj.prev_.adj.next_
+            : puzzle.stands[sheet].adj.next_.adj.prev_.adj.prev_;
+        return unrollUntilLoopback(edge0, edge => edge.next_.adj.next_.adj.next_);
     }
     Puzzle.getCenterEdges = getCenterEdges;
     // side = true: left
@@ -446,9 +367,9 @@ export var PrincipalPuzzle;
         console.assert(center_x < radius);
         console.assert(center_x * 2 > radius);
         console.assert(R > center_x + radius);
-        const space = Puzzle.make();
-        const left_center_piece = space.stands[0].adj.next.adj.prev.adj.next.adj.aff;
-        const right_center_piece = space.stands[1].adj.next.adj.prev.adj.prev.adj.aff;
+        const space = Puzzle.makeRamifiedV1();
+        const left_center_piece = space.stands[0].adj.next_.adj.prev_.adj.next_.adj.aff;
+        const right_center_piece = space.stands[1].adj.next_.adj.prev_.adj.prev_.adj.aff;
         return {
             radius,
             center_x,
@@ -712,40 +633,40 @@ export var PrincipalPuzzle;
                 { start: p4, end: p2, circle: left_circle },
             ];
             let left_corner_arcs = corner_arcs0;
-            const left_circle_edge0 = puzzle.space.stands[0].adj.next.adj;
-            for (const edge of unrollUntilLoopback(left_circle_edge0, edge => edge.next.adj.next.next.adj.next)) {
+            const left_circle_edge0 = puzzle.space.stands[0].adj.next_.adj;
+            for (const edge of unrollUntilLoopback(left_circle_edge0, edge => edge.next_.adj.next_.next_.adj.next_)) {
                 if (!arcs.has(edge)) {
                     arcs.set(edge, left_corner_arcs[0]);
-                    arcs.set(edge.next, left_corner_arcs[1]);
-                    arcs.set(edge.next.next, left_corner_arcs[2]);
+                    arcs.set(edge.next_, left_corner_arcs[1]);
+                    arcs.set(edge.next_.next_, left_corner_arcs[2]);
                 }
                 left_corner_arcs = left_corner_arcs.map(arc => transformArc(arc, left_trans));
             }
             let right_corner_arcs = corner_arcs0;
-            const right_circle_edge0 = puzzle.space.stands[0].adj.next.adj.next;
-            for (const edge of unrollUntilLoopback(right_circle_edge0, seg => seg.next.adj.next.next.adj.next)) {
+            const right_circle_edge0 = puzzle.space.stands[0].adj.next_.adj.next_;
+            for (const edge of unrollUntilLoopback(right_circle_edge0, seg => seg.next_.adj.next_.next_.adj.next_)) {
                 if (!arcs.has(edge)) {
                     arcs.set(edge, right_corner_arcs[1]);
-                    arcs.set(edge.next, right_corner_arcs[2]);
-                    arcs.set(edge.next.next, right_corner_arcs[0]);
+                    arcs.set(edge.next_, right_corner_arcs[2]);
+                    arcs.set(edge.next_.next_, right_corner_arcs[0]);
                 }
                 right_corner_arcs = right_corner_arcs.map(arc => transformArc(arc, right_trans));
             }
             let left_edge_arcs = edge_arcs0;
-            const left_circle_seg0 = puzzle.space.stands[0].adj.next.adj.prev.adj.prev;
-            for (const seg of unrollUntilLoopback(left_circle_seg0, seg => seg.next.adj.next.next.adj.next)) {
+            const left_circle_seg0 = puzzle.space.stands[0].adj.next_.adj.prev_.adj.prev_;
+            for (const seg of unrollUntilLoopback(left_circle_seg0, seg => seg.next_.adj.next_.next_.adj.next_)) {
                 if (!arcs.has(seg)) {
                     arcs.set(seg, left_edge_arcs[1]);
-                    arcs.set(seg.next.next, left_edge_arcs[0]);
+                    arcs.set(seg.next_.next_, left_edge_arcs[0]);
                 }
                 left_edge_arcs = left_edge_arcs.map(arc => transformArc(arc, left_trans));
             }
             let right_edge_arcs = edge_arcs0;
-            const right_circle_seg0 = puzzle.space.stands[0].adj.next.adj.prev.adj.next;
-            for (const seg of unrollUntilLoopback(right_circle_seg0, seg => seg.next.adj.next.next.adj.next)) {
+            const right_circle_seg0 = puzzle.space.stands[0].adj.next_.adj.prev_.adj.next_;
+            for (const seg of unrollUntilLoopback(right_circle_seg0, seg => seg.next_.adj.next_.next_.adj.next_)) {
                 if (!arcs.has(seg)) {
                     arcs.set(seg, right_edge_arcs[0]);
-                    arcs.set(seg.next.next, right_edge_arcs[1]);
+                    arcs.set(seg.next_.next_, right_edge_arcs[1]);
                 }
                 right_edge_arcs = right_edge_arcs.map(arc => transformArc(arc, right_trans));
             }
@@ -1025,14 +946,14 @@ export var PrincipalPuzzleWithTexture;
         const unshifted_positions = new Map(puzzle.space.pieces.map(piece => [piece, Geo.id_trans()]));
         const texture_indices = new Map();
         {
-            const edgeL = puzzle.space.stands[0].adj.next.adj.prev.adj.next;
-            const edgeR = puzzle.space.stands[1].adj.next.adj.prev.adj.prev;
+            const edgeL = puzzle.space.stands[0].adj.next_.adj.prev_.adj.next_;
+            const edgeR = puzzle.space.stands[1].adj.next_.adj.prev_.adj.prev_;
             texture_indices.set(edgeL.aff, 3);
             texture_indices.set(edgeL.adj.aff, 3);
-            texture_indices.set(edgeL.next.next.adj.aff, 3);
+            texture_indices.set(edgeL.next_.next_.adj.aff, 3);
             texture_indices.set(edgeR.aff, 2);
             texture_indices.set(edgeR.adj.aff, 2);
-            texture_indices.set(edgeR.next.next.adj.aff, 2);
+            texture_indices.set(edgeR.next_.next_.adj.aff, 2);
             const prin = new Set();
             prin.add(puzzle.space.stands[0].aff);
             for (const piece of prin) {
