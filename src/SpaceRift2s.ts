@@ -160,7 +160,7 @@ export class SpaceRift2s {
       ctx.lineWidth = 1;
       ctx.strokeStyle = "black";
       for (const [_piece, path] of Model.PrincipalPuzzle.calculateShapes(this.model.puzzle)) {
-        const hide = path.segs.map(seg => this.model.auxiliary_edges.has(seg.source));
+        const hide = path.segs.map(seg => seg.source.auxiliary);
         ctx.stroke(Draw.toCanvasPath(this.cs, path, hide));
       }
     }

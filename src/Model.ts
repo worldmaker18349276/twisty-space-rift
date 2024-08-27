@@ -33,6 +33,7 @@ export type Edge = {
   next: Edge;
   prev: Edge;
   adj: Edge;
+  auxiliary: boolean;
 };
 
 export enum PieceType { CornerPiece, EdgePiece, CenterPiece, BoundaryPiece, InfPiece }
@@ -55,6 +56,7 @@ export namespace Puzzle {
       next: undefined,
       prev: undefined,
       adj: undefined,
+      auxiliary: false,
     } as unknown as Edge;
     edge.next = edge;
     edge.prev = edge;
@@ -141,6 +143,15 @@ export namespace Puzzle {
 
     const pieceINF = makeInfPiece("INF");
 
+    pieceBL.edges[9].auxiliary = true;
+    pieceBL.edges[10].auxiliary = true;
+    pieceBL.edges[11].auxiliary = true;
+    pieceBR.edges[9].auxiliary = true;
+    pieceBR.edges[10].auxiliary = true;
+    pieceBR.edges[11].auxiliary = true;
+    pieceINF.edges[0].auxiliary = true;
+    pieceINF.edges[1].auxiliary = true;
+
     // bottom pieces
 
     const piece0L_ = makeCornerPiece("0L_");
@@ -171,6 +182,15 @@ export namespace Puzzle {
     const pieceBR_ = makeBoundaryPiece("BR_");
     const pieceINF_ = makeInfPiece("INF_");
 
+    pieceBL_.edges[9].auxiliary = true;
+    pieceBL_.edges[10].auxiliary = true;
+    pieceBL_.edges[11].auxiliary = true;
+    pieceBR_.edges[9].auxiliary = true;
+    pieceBR_.edges[10].auxiliary = true;
+    pieceBR_.edges[11].auxiliary = true;
+    pieceINF_.edges[0].auxiliary = true;
+    pieceINF_.edges[1].auxiliary = true;
+
     // ramified pieces and middle pieces
 
     // edges[0]: edge outgoing the center
@@ -183,6 +203,19 @@ export namespace Puzzle {
     const pieceCL2_ = makeCenterPiece("CL2_");
     const pieceCL3_ = makeCenterPiece("CL3_");
 
+    pieceCL1.edges[0].auxiliary = true;
+    pieceCL1.edges[3].auxiliary = true;
+    pieceCL2.edges[0].auxiliary = true;
+    pieceCL2.edges[3].auxiliary = true;
+    pieceCL3.edges[0].auxiliary = true;
+    pieceCL3.edges[3].auxiliary = true;
+    pieceCL1_.edges[0].auxiliary = true;
+    pieceCL1_.edges[3].auxiliary = true;
+    pieceCL2_.edges[0].auxiliary = true;
+    pieceCL2_.edges[3].auxiliary = true;
+    pieceCL3_.edges[0].auxiliary = true;
+    pieceCL3_.edges[3].auxiliary = true;
+
     // pieceCR1.edges[1]: edge outgoing the branch cut
     const pieceCR1 = makeCenterPiece("CR1");
     const pieceCR2 = makeCenterPiece("CR2");
@@ -190,6 +223,19 @@ export namespace Puzzle {
     const pieceCR1_ = makeCenterPiece("CR1_");
     const pieceCR2_ = makeCenterPiece("CR2_");
     const pieceCR3_ = makeCenterPiece("CR3_");
+
+    pieceCR1.edges[0].auxiliary = true;
+    pieceCR1.edges[3].auxiliary = true;
+    pieceCR2.edges[0].auxiliary = true;
+    pieceCR2.edges[3].auxiliary = true;
+    pieceCR3.edges[0].auxiliary = true;
+    pieceCR3.edges[3].auxiliary = true;
+    pieceCR1_.edges[0].auxiliary = true;
+    pieceCR1_.edges[3].auxiliary = true;
+    pieceCR2_.edges[0].auxiliary = true;
+    pieceCR2_.edges[3].auxiliary = true;
+    pieceCR3_.edges[0].auxiliary = true;
+    pieceCR3_.edges[3].auxiliary = true;
 
     // edges[0]: edge outgoing the branch cut
 
@@ -1194,7 +1240,6 @@ export type PrincipalPuzzleWithTexture<Image> = {
   unshifted_positions: Map<Piece, Geo.RigidTransformation>;
   texture_indices: Map<Piece, number>;
   textures: [Image, Image, Image, Image];
-  auxiliary_edges: Set<Edge>;
 };
 
 export namespace PrincipalPuzzleWithTexture {
@@ -1244,30 +1289,10 @@ export namespace PrincipalPuzzleWithTexture {
         texture_indices.set(piece, 1);
     }
 
-    const auxiliary_edges = new Set<Edge>();
-    {
-      auxiliary_edges.add(puzzle.space.stands[0].aff.edges[9]);
-      auxiliary_edges.add(puzzle.space.stands[0].aff.edges[10]);
-      auxiliary_edges.add(puzzle.space.stands[0].aff.edges[11]);
-      auxiliary_edges.add(puzzle.space.stands[1].aff.edges[9]);
-      auxiliary_edges.add(puzzle.space.stands[1].aff.edges[10]);
-      auxiliary_edges.add(puzzle.space.stands[1].aff.edges[11]);
-      for (const edge of Puzzle.getCenterEdges(puzzle.space, true, 0)) {
-        auxiliary_edges.add(edge.adj.aff.edges[0]);
-      }
-      for (const edge of Puzzle.getCenterEdges(puzzle.space, false, 1)) {
-        auxiliary_edges.add(edge.adj.aff.edges[0]);
-      }
-      for (const edge of auxiliary_edges) {
-        auxiliary_edges.add(edge.adj);
-      }
-    }
-    
     return {
       puzzle,
       unshifted_positions,
       texture_indices,
-      auxiliary_edges,
       textures: [draw_image(f[0]), draw_image(f[1]), draw_image(f[2]), draw_image(f[3])],
     };
   }
