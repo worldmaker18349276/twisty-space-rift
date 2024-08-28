@@ -59,6 +59,9 @@ export function rotate(angle) {
         [s, c, 0],
     ];
 }
+export function rotateAround(angle, center) {
+    return compose(translate(mul(center, -1)), rotate(angle), translate(center));
+}
 export function translate(shift) {
     return [
         [1, 0, shift[0]],

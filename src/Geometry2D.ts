@@ -69,6 +69,14 @@ export function rotate(angle: Angle): Matrix2x3 {
   ];
 }
 
+export function rotateAround(angle: Angle, center: Vector2): Matrix2x3 {
+  return compose(
+    translate(mul(center, -1)),
+    rotate(angle),
+    translate(center),
+  );
+}
+
 export function translate(shift: Vector2): Matrix2x3 {
   return [
     [ 1, 0, shift[0]],

@@ -137,7 +137,8 @@ export var Puzzle;
         return makeEdges({ type: PieceType.CenterPiece, edges: [], name }, 6);
     }
     function ramifyPiece(name, pieces, n) {
-        const edges = pieces.flatMap(piece => [...piece.edges.slice(n), ...piece.edges.slice(0, n)]);
+        let edges = pieces.flatMap(piece => [...piece.edges.slice(n), ...piece.edges.slice(0, n)]);
+        edges = [...edges.slice(-n), ...edges.slice(0, -n)];
         const type = pieces[0].type;
         const piece = { type, edges, name };
         for (const i of indices(edges.length)) {
@@ -610,89 +611,82 @@ export var PrincipalPuzzle;
         };
     }
     PrincipalPuzzle.calculateRift = calculateRift;
-    function calculateShapes(puzzle) {
+    function transformArc(arc, trans) {
+        return {
+            start: Geo.transformPoint(arc.start, trans),
+            end: Geo.transformPoint(arc.end, trans),
+            center: Geo.transformPoint(arc.center, trans),
+            circle: Geo.transformCircle(arc.circle, trans),
+        };
+    }
+    function flipArc(arc) {
+        return {
+            start: arc.end,
+            end: arc.start,
+            center: arc.center,
+            circle: Geo.flipCircle(arc.circle),
+        };
+    }
+    function calculateArcs(puzzle) {
         const left_trans = getTwistTransformation(puzzle, true, true);
-        const left_trans_rev = getTwistTransformation(puzzle, true, false);
         const right_trans = getTwistTransformation(puzzle, false, true);
-        const right_trans_rev = getTwistTransformation(puzzle, false, false);
         const [left_circle, right_circle] = getTwistCircles(puzzle);
-        const top_circle = Geo.transformCircle(right_circle, left_trans);
         const intersections = Geo.intersectCircles(left_circle, right_circle);
         console.assert(intersections !== undefined);
-        const upper_point = intersections.points[1];
-        const lower_point = intersections.points[0];
-        const p0 = upper_point;
-        const p1 = Geo.transformPoint(lower_point, right_trans_rev);
-        const p2 = Geo.transformPoint(lower_point, left_trans);
-        const p3 = Geo.transformPoint(upper_point, right_trans);
-        const p4 = Geo.transformPoint(upper_point, left_trans_rev);
-        function transformArc(arc, trans) {
-            return {
-                start: Geo.transformPoint(arc.start, trans),
-                end: Geo.transformPoint(arc.end, trans),
-                circle: Geo.transformCircle(arc.circle, trans),
-            };
-        }
-        function flipArc(arc) {
-            return {
-                start: arc.end,
-                end: arc.start,
-                circle: Geo.flipCircle(arc.circle),
-            };
-        }
+        const p0 = intersections.points[1];
+        const p1 = Geo.transformPoint(p0, right_trans);
+        const p2 = Geo.transformPoint(p1, left_trans);
+        const c = [0, puzzle.center_x / Math.sqrt(3)];
+        const ang = Geo.angleBetween(right_circle.center, p2, p1);
         const arcs = new Map();
-        {
-            const corner_arcs0 = [
-                { start: p2, end: p0, circle: left_circle },
-                { start: p0, end: p1, circle: right_circle },
-                { start: p1, end: p2, circle: top_circle },
-            ];
-            const edge_arcs0 = [
-                { start: p1, end: p3, circle: right_circle },
-                { start: p4, end: p2, circle: left_circle },
-            ];
-            let left_corner_arcs = corner_arcs0;
-            const left_circle_edge0 = Puzzle.edgeAt(puzzle.space, 0, [0, 1]);
-            for (const edge of unrollUntilLoopback(left_circle_edge0, edge => Edge.walk(edge, [1, 2, 1, 0]))) {
-                if (!arcs.has(edge)) {
-                    arcs.set(edge, left_corner_arcs[0]);
-                    arcs.set(Edge.walk(edge, [1, 0]), left_corner_arcs[1]);
-                    arcs.set(Edge.walk(edge, [2, 0]), left_corner_arcs[2]);
-                }
-                left_corner_arcs = left_corner_arcs.map(arc => transformArc(arc, left_trans));
+        arcs.set(Puzzle.edgeAt(puzzle.space, 0, [0, 1, 1, 0]), { start: p0, end: p2, center: c, circle: right_circle });
+        arcs.set(Puzzle.edgeAt(puzzle.space, 0, [0, 1, -1, 1, 0]), { start: p2, end: p1, center: c, circle: right_circle });
+        for (const [edge, arc] of arcs) {
+            if (!arcs.has(edge.adj)) {
+                arcs.set(edge.adj, flipArc(arc));
             }
-            let right_corner_arcs = corner_arcs0;
-            const right_circle_edge0 = Puzzle.edgeAt(puzzle.space, 0, [0, 1, 1, 0]);
-            for (const edge of unrollUntilLoopback(right_circle_edge0, edge => Edge.walk(edge, [1, 2, 1, 0]))) {
-                if (!arcs.has(edge)) {
-                    arcs.set(edge, right_corner_arcs[1]);
-                    arcs.set(Edge.walk(edge, [1, 0]), right_corner_arcs[2]);
-                    arcs.set(Edge.walk(edge, [2, 0]), right_corner_arcs[0]);
+            if (!arcs.has(Edge.next(edge))) {
+                if (edge.aff.type === PieceType.CornerPiece) {
+                    arcs.set(Edge.next(edge), transformArc(arc, Geo.rotateAround(Math.PI * 2 / 3, arc.center)));
                 }
-                right_corner_arcs = right_corner_arcs.map(arc => transformArc(arc, right_trans));
-            }
-            let left_edge_arcs = edge_arcs0;
-            const left_circle_seg0 = Puzzle.edgeAt(puzzle.space, 0, [0, 1, -1, -1, 0]);
-            for (const edge of unrollUntilLoopback(left_circle_seg0, edge => Edge.walk(edge, [1, 2, 1, 0]))) {
-                if (!arcs.has(edge)) {
-                    arcs.set(edge, left_edge_arcs[1]);
-                    arcs.set(Edge.walk(edge, [2, 0]), left_edge_arcs[0]);
+                else if (edge.aff.type === PieceType.EdgePiece && edge.adj.aff.type === PieceType.CornerPiece) {
+                    const circle = Geo.flipCircle(Geo.transformCircle(arc.circle, Geo.rotateAround(-Math.PI * 2 / 3, arc.center)));
+                    const end = Geo.transformPoint(arc.end, Geo.rotateAround(ang, circle.center));
+                    arcs.set(Edge.next(edge), { start: arc.end, end, center: arc.center, circle });
                 }
-                left_edge_arcs = left_edge_arcs.map(arc => transformArc(arc, left_trans));
-            }
-            let right_edge_arcs = edge_arcs0;
-            const right_circle_seg0 = Puzzle.edgeAt(puzzle.space, 0, [0, 1, -1, 1, 0]);
-            for (const edge of unrollUntilLoopback(right_circle_seg0, edge => Edge.walk(edge, [1, 2, 1, 0]))) {
-                if (!arcs.has(edge)) {
-                    arcs.set(edge, right_edge_arcs[0]);
-                    arcs.set(Edge.walk(edge, [2, 0]), right_edge_arcs[1]);
+                else if (edge.aff.type === PieceType.EdgePiece && edge.adj.aff.type !== PieceType.CornerPiece) {
+                    const center = Geo.transformPoint(arc.center, Geo.rotateAround(Math.PI / 3, arc.circle.center));
+                    const circle = Geo.flipCircle(Geo.transformCircle(arc.circle, Geo.rotateAround(-Math.PI * 2 / 3, center)));
+                    const end = Geo.transformPoint(arc.end, Geo.rotateAround(-Math.PI * 2 / 3, center));
+                    arcs.set(Edge.next(edge), { start: arc.end, end, center, circle });
                 }
-                right_edge_arcs = right_edge_arcs.map(arc => transformArc(arc, right_trans));
             }
         }
-        for (const [edge, arc] of arcs)
-            if (!arcs.has(edge.adj))
-                arcs.set(edge.adj, flipArc(arc));
+        return arcs;
+    }
+    function makeBoundaryShapes(puzzle, arcs, sheet) {
+        const pieceBR = Puzzle.edgeAt(puzzle.space, sheet, []).aff;
+        const pieceBL = Puzzle.edgeAt(puzzle.space, sheet, [-1, 0]).aff;
+        const circle = { center: [0, 0], radius: puzzle.R };
+        return new Map([pieceBL, pieceBR].map(piece => {
+            const path = { is_closed: true, segs: [] };
+            for (const edge of piece.edges.slice(0, 9)) {
+                const arc = arcs.get(edge);
+                path.segs.push(Geo.makePathSegArc(arc.start, arc.end, arc.circle, edge));
+            }
+            const p1 = arcs.get(piece.edges[8]).end;
+            const p2 = [0, p1[1] > 0 ? puzzle.R : -puzzle.R];
+            const p3 = [0, p1[1] > 0 ? -puzzle.R : puzzle.R];
+            const p4 = arcs.get(piece.edges[0]).start;
+            path.segs.push(Geo.makePathSegLine(p1, p2, piece.edges[9]));
+            path.segs.push(Geo.makePathSegArc(p2, p3, circle, piece.edges[10]));
+            path.segs.push(Geo.makePathSegLine(p3, p4, piece.edges[11]));
+            return [piece, path];
+        }));
+    }
+    function calculateShapes(puzzle) {
+        const [left_circle, right_circle] = getTwistCircles(puzzle);
+        const arcs = calculateArcs(puzzle);
         if (puzzle.state.type === StateType.LeftShifted) {
             const left_shift_trans = getShiftTransformation(puzzle);
             for (const piece of Puzzle.getTwistPiece(puzzle.space, true, 0))
@@ -728,27 +722,9 @@ export var PrincipalPuzzle;
             }
             result.set(piece, path);
         }
-        {
-            const pieceBR = Puzzle.edgeAt(puzzle.space, 0, []).aff;
-            const pieceBL = Puzzle.edgeAt(puzzle.space, 0, [-1, 0]).aff;
-            const pieceBR_ = Puzzle.edgeAt(puzzle.space, 1, []).aff;
-            const pieceBL_ = Puzzle.edgeAt(puzzle.space, 1, [-1, 0]).aff;
-            const circle = { center: [0, 0], radius: puzzle.R };
-            const circle_ = { center: [0, 0], radius: -puzzle.R };
-            for (const piece of [pieceBR, pieceBR_, pieceBL, pieceBL_]) {
-                const path = { is_closed: true, segs: [] };
-                for (const edge of piece.edges.slice(0, 9)) {
-                    const arc = arcs.get(edge);
-                    path.segs.push(Geo.makePathSegArc(arc.start, arc.end, arc.circle, edge));
-                }
-                const p1 = arcs.get(piece.edges[8]).end;
-                const p2 = [0, p1[1] > 0 ? puzzle.R : -puzzle.R];
-                const p3 = [0, p1[1] > 0 ? -puzzle.R : puzzle.R];
-                const p4 = arcs.get(piece.edges[0]).start;
-                path.segs.push(Geo.makePathSegLine(p1, p2, piece.edges[9]));
-                path.segs.push(Geo.makePathSegArc(p2, p3, circle, piece.edges[10]));
-                path.segs.push(Geo.makePathSegLine(p3, p4, piece.edges[11]));
-                result.set(piece, path);
+        for (const sheet of [0, 1]) {
+            for (const [piece, shape] of makeBoundaryShapes(puzzle, arcs, sheet)) {
+                result.set(piece, shape);
             }
         }
         return result;
