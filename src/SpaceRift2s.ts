@@ -97,12 +97,12 @@ export class SpaceRift2s {
       const t = (time - this.control_state.start_time) / this.control_state.duration;
       if (!Number.isFinite(t) || t > 1) {
         // console.assert(this.model.puzzle.state.type !== Model.StateType.Aligned);
-        const side = (this.model.puzzle.state.type === Model.StateType.LeftShifted);
+        const side = (this.model.puzzle.space.state.type === Model.StateType.LeftShifted);
         Model.PrincipalPuzzleWithTexture.twistTo(this.model, this.control_state.shift_to, side);
         Model.PrincipalPuzzleWithTexture.snap(this.model);
         this.control_state = {type: PuzzleControlStateType.Ready};
       } else {
-        const side = (this.model.puzzle.state.type === Model.StateType.LeftShifted);
+        const side = (this.model.puzzle.space.state.type === Model.StateType.LeftShifted);
         const shift = this.control_state.shift_from + (this.control_state.shift_to - this.control_state.shift_from) * t;
         Model.PrincipalPuzzleWithTexture.twistTo(this.model, shift, side);
       }
@@ -274,10 +274,10 @@ export class SpaceRift2s {
         is_dragging = true;
 
       } else if (event.button === 0 || event.button === 2) {
-        const [left_circle, right_circle] = Model.PrincipalPuzzle.getTwistCircles(this.model.puzzle);
+        const [left_circle, right_circle] = Model.Puzzle.getTwistCircles(this.model.puzzle.space);
         const left_dis = Geo.norm(Geo.sub(left_circle.center, point));
         const right_dis = Geo.norm(Geo.sub(right_circle.center, point));
-        if (left_dis > this.model.puzzle.radius && right_dis > this.model.puzzle.radius) return;
+        if (left_dis > this.model.puzzle.space.radius && right_dis > this.model.puzzle.space.radius) return;
         const side = left_dis < right_dis;
         const turn = event.button === 0 ? 1 : -1;
         this.twist(turn, side);

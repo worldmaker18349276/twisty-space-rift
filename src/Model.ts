@@ -79,10 +79,44 @@ export type Piece = {
   name: string;
 };
 
+export enum StateType { Aligned, LeftShifted, RightShifted }
+
+export type State =
+  | { type: StateType.Aligned }
+  | { type: StateType.LeftShifted, angle: Geo.Angle }
+  | { type: StateType.RightShifted, angle: Geo.Angle };
+
 export type Puzzle = {
   pieces: Piece[];
   stands: Edge[]; // boundary piece's edges at the top intersection point
+  state: State;
+  radius: Geo.Distance;
+  center_x: Geo.Distance;
+  R: Geo.Distance;
 };
+
+type Arc = {
+  start: Geo.Point,
+  end: Geo.Point,
+  center: Geo.Point,
+  circle: Geo.DirectionalCircle,
+};
+function transformArc(arc: Arc, trans: Geo.RigidTransformation): Arc {
+  return {
+    start: Geo.transformPoint(arc.start, trans),
+    end: Geo.transformPoint(arc.end, trans),
+    center: Geo.transformPoint(arc.center, trans),
+    circle: Geo.transformCircle(arc.circle, trans),
+  };
+}
+function flipArc(arc: Arc): Arc {
+  return {
+    start: arc.end,
+    end: arc.start,
+    center: arc.center,
+    circle: Geo.flipCircle(arc.circle),
+  };
+}
 
 export namespace Puzzle {
   function makeEdge(piece: Piece): Edge {
@@ -207,7 +241,11 @@ export namespace Puzzle {
     return subpieces;
   }
 
-  export function make(suffix: string = ""): Puzzle {
+  export function edgeAt(puzzle: Puzzle, sheet: number, steps: number[]): Edge {
+    return Edge.walk(puzzle.stands[sheet], steps);
+  }
+
+  export function makePieces(suffix: string = ""): { pieces: Piece[], stands: Edge[] } {
     // edges[0]: edge started with center piece
 
     // piece0L: piece touched above intersection point
@@ -352,23 +390,19 @@ export namespace Puzzle {
     };
   }
 
-  export function edgeAt(puzzle: Puzzle, sheet: number, steps: number[]): Edge {
-    return Edge.walk(puzzle.stands[sheet], steps);
-  }
-
-  export function makeRamifiedV1(): Puzzle {
+  export function makeRamifiedV1Pieces(): { pieces: Piece[], stands: Edge[] } {
     // top pieces
     
-    const top = make("_top");
-    const bot = make("_bot");
+    const top = makePieces("_top");
+    const bot = makePieces("_bot");
     
-    const top_piece50L = edgeAt(top, 0, [0, 1, -1, 1, 0]).aff;
-    const bot_piece50L = edgeAt(bot, 0, [0, 1, -1, 1, 0]).aff;
+    const top_piece50L = Edge.walk(top.stands[0], [0, 1, -1, 1, 0]).aff;
+    const bot_piece50L = Edge.walk(bot.stands[0], [0, 1, -1, 1, 0]).aff;
 
-    const top_pieceCL = edgeAt(top, 0, [0, 1, -1, 1]).aff;
-    const top_pieceCR = edgeAt(top, 0, [0, 1, -1, -1]).aff;
-    const bot_pieceCL = edgeAt(bot, 0, [0, 1, -1, 1]).aff;
-    const bot_pieceCR = edgeAt(bot, 0, [0, 1, -1, -1]).aff;
+    const top_pieceCL = Edge.walk(top.stands[0], [0, 1, -1, 1]).aff;
+    const top_pieceCR = Edge.walk(top.stands[0], [0, 1, -1, -1]).aff;
+    const bot_pieceCL = Edge.walk(bot.stands[0], [0, 1, -1, 1]).aff;
+    const bot_pieceCR = Edge.walk(bot.stands[0], [0, 1, -1, -1]).aff;
 
     // ramify center pieces
 
@@ -398,6 +432,18 @@ export namespace Puzzle {
     );
     
     return { pieces, stands: [top.stands[0], bot.stands[0]] };
+  }
+
+  export function makeRamifiedV1Puzzle(radius: Geo.Distance, center_x: Geo.Distance, R: Geo.Distance): Puzzle {
+    const {pieces, stands} = makeRamifiedV1Pieces();
+    return {
+      pieces,
+      stands,
+      state: { type: StateType.Aligned },
+      radius,
+      center_x,
+      R,
+    };
   }
 
   // side = true: left
@@ -430,7 +476,7 @@ export namespace Puzzle {
   }
 
   // side = true: left
-  export function twist(puzzle: Puzzle, side: boolean, sheet: number, forward: boolean): void {
+  function twist(puzzle: Puzzle, side: boolean, sheet: number, forward: boolean): void {
     const edges = getCircleEdges(puzzle, side, sheet);
     const edges_adj = edges.map(edge => edge.adj);
     const edges_adj_rotated =
@@ -440,65 +486,49 @@ export namespace Puzzle {
       adjEdges(edges[i], edges_adj_rotated[i]);
     }
   }
-}
-
-export enum StateType { Aligned, LeftShifted, RightShifted }
-
-export type State =
-  | { type: StateType.Aligned }
-  | { type: StateType.LeftShifted, angle: Geo.Angle }
-  | { type: StateType.RightShifted, angle: Geo.Angle };
-
-export type PrincipalPuzzle = {
-  radius: Geo.Distance;
-  center_x: Geo.Distance;
-  R: Geo.Distance;
-  space: Puzzle;
-  state: State;
-  rift_offset: number; // -1 ~ +1
-  rift_angle: Geo.Angle; // 0 ~ 4 pi
-  ramified_angles: {
-    left: [piece:Piece, n:number]; // n: 0 ~ 12
-    right: [piece:Piece, n:number]; // n: 0 ~ 12
-  };
-};
-
-export namespace PrincipalPuzzle {
-  const MAX_RIFT_OFFSET = 0.8;
-
-  export function make(radius: Geo.Distance, center_x: Geo.Distance, R: Geo.Distance): PrincipalPuzzle {
-    console.assert(center_x > 0);
-    console.assert(radius > 0);
-    console.assert(center_x < radius);
-    console.assert(center_x * 2 > radius);
-    console.assert(R > center_x + radius);
-
-    const space = Puzzle.makeRamifiedV1();
-    const left_center_piece = Puzzle.edgeAt(space, 0, [0, 1, -1, 1]).aff;
-    const right_center_piece = Puzzle.edgeAt(space, 1, [0, 1, -1, -1]).aff;
-
-    return {
-      radius,
-      center_x,
-      R,
-      space,
-      state: { type: StateType.Aligned },
-      rift_offset: 0,
-      rift_angle: 0,
-      ramified_angles: {
-        left: [left_center_piece, 0],
-        right: [right_center_piece, 0],
-      },
-    };
+  // side = true: left
+  export function twistTo(puzzle: Puzzle, angle: Geo.Angle, side: boolean): boolean {
+    if (side && puzzle.state.type !== StateType.RightShifted) {
+      puzzle.state = {
+        type: StateType.LeftShifted,
+        angle: angle,
+      }
+      return true;
+    } else if (!side && puzzle.state.type !== StateType.LeftShifted) {
+      puzzle.state = {
+        type: StateType.RightShifted,
+        angle: angle,
+      }
+      return true;
+    } else {
+      return false;
+    }
+  }
+  export function snap(puzzle: Puzzle): [side: boolean, turn: number] {
+    if (puzzle.state.type === StateType.Aligned) return [true, 0];
+    let dn: number;
+    let side: boolean;
+    if (puzzle.state.type === StateType.LeftShifted) {
+      dn = Math.round(puzzle.state.angle / (Math.PI/3));
+      puzzle.state = { type: StateType.Aligned };
+      side = true;
+    } else {
+      dn = Math.round(puzzle.state.angle / (Math.PI/3));
+      puzzle.state = { type: StateType.Aligned };
+      side = false;
+    }
+    for (const _ of indices(Math.abs(dn)))
+      twist(puzzle, side, 0, dn > 0);
+    return [side, dn];
   }
 
-  export function getTwistCircles(puzzle: PrincipalPuzzle): [left:Geo.DirectionalCircle, right:Geo.DirectionalCircle] {
+  export function getTwistCircles(puzzle: Puzzle): [left:Geo.DirectionalCircle, right:Geo.DirectionalCircle] {
     return [
       { center: [-puzzle.center_x, 0], radius: puzzle.radius },
       { center: [+puzzle.center_x, 0], radius: puzzle.radius },
     ];
   }
-  export function getShiftTransformation(puzzle: PrincipalPuzzle): Geo.RigidTransformation {
+  export function getShiftTransformation(puzzle: Puzzle): Geo.RigidTransformation {
     if (puzzle.state.type === StateType.LeftShifted) {
       return Geo.compose(
         Geo.translate([puzzle.center_x, 0]),
@@ -515,7 +545,7 @@ export namespace PrincipalPuzzle {
     }
     return Geo.id_trans();
   }
-  export function getTwistTransformation(puzzle: PrincipalPuzzle, side: boolean, forward: boolean): Geo.RigidTransformation {
+  export function getTwistTransformation(puzzle: Puzzle, side: boolean, forward: boolean): Geo.RigidTransformation {
     if (side && forward)
       return Geo.compose(
         Geo.translate([puzzle.center_x, 0]),
@@ -541,6 +571,190 @@ export namespace PrincipalPuzzle {
         Geo.translate([puzzle.center_x, 0]),
       );
     return Geo.id_trans();
+  }
+
+  function calculateArcs(puzzle: Puzzle): Map<Edge, Arc> {
+    const left_trans = getTwistTransformation(puzzle, true, true);
+    const right_trans = getTwistTransformation(puzzle, false, true);
+    const [left_circle, right_circle] = getTwistCircles(puzzle);
+    
+    const intersections = Geo.intersectCircles(left_circle, right_circle);
+    console.assert(intersections !== undefined);
+    const p0 = intersections!.points[1];
+    const p1 = Geo.transformPoint(p0, right_trans);
+    const p2 = Geo.transformPoint(p1, left_trans);
+    const c: Geo.Point = [0, puzzle.center_x / Math.sqrt(3)];
+    const ang = Geo.angleBetween(right_circle.center, p2, p1);
+
+    const arcs = new Map<Edge, Arc>();
+    arcs.set(
+      Puzzle.edgeAt(puzzle, 0, [0, 1, 1, 0]),
+      { start: p0, end: p2, center: c, circle: right_circle },
+    );
+    arcs.set(
+      Puzzle.edgeAt(puzzle, 0, [0, 1, -1, 1, 0]),
+      { start: p2, end: p1, center: c, circle: right_circle },
+    );
+
+    for (const [edge, arc] of arcs) {
+      if (!arcs.has(edge.adj)) {
+        arcs.set(edge.adj, flipArc(arc));
+      }
+      if (!arcs.has(Edge.next(edge))) {
+        if (edge.aff.type === PieceType.CornerPiece) {
+          arcs.set(
+            Edge.next(edge),
+            transformArc(arc, Geo.rotateAround(Math.PI*2/3, arc.center)),
+          );
+
+        } else if (edge.aff.type === PieceType.EdgePiece && edge.adj.aff.type === PieceType.CornerPiece) {
+          const circle = Geo.flipCircle(Geo.transformCircle(
+            arc.circle,
+            Geo.rotateAround(-Math.PI*2/3, arc.center),
+          ));
+          const end = Geo.transformPoint(arc.end, Geo.rotateAround(ang, circle.center));
+          arcs.set(
+            Edge.next(edge),
+            { start: arc.end, end, center: arc.center, circle },
+          );
+
+        } else if (edge.aff.type === PieceType.EdgePiece && edge.adj.aff.type !== PieceType.CornerPiece) {
+          const center = Geo.transformPoint(
+            arc.center,
+            Geo.rotateAround(Math.PI/3, arc.circle.center)
+          );
+          const circle = Geo.flipCircle(Geo.transformCircle(
+            arc.circle,
+            Geo.rotateAround(-Math.PI*2/3, center),
+          ));
+          const end = Geo.transformPoint(
+            arc.end,
+            Geo.rotateAround(-Math.PI*2/3, center),
+          );
+          arcs.set(
+            Edge.next(edge),
+            { start: arc.end, end, center, circle },
+          );
+        }
+      }
+    }
+
+    return arcs;
+  }
+
+  function makeBoundaryShapes(
+    puzzle: Puzzle,
+    arcs: Map<Edge, Arc>,
+    sheet: number
+  ): Map<Piece, Geo.Path<Edge>> {
+    const pieceBR = Puzzle.edgeAt(puzzle, sheet, []).aff;
+    const pieceBL = Puzzle.edgeAt(puzzle, sheet, [-1, 0]).aff;
+
+    const circle: Geo.DirectionalCircle = { center: [0, 0], radius: puzzle.R };
+
+    return new Map([pieceBL, pieceBR].map(piece => {
+      const path: Geo.Path<Edge> = { is_closed: true, segs: [] };
+      for (const edge of piece.edges.slice(0, 9)) {
+        const arc = arcs.get(edge)!;
+        path.segs.push(Geo.makePathSegArc(arc.start, arc.end, arc.circle, edge));
+      }
+      const p1 = arcs.get(piece.edges[8])!.end;
+      const p2: Geo.Vector2 = [0, p1[1] > 0 ? puzzle.R : -puzzle.R];
+      const p3: Geo.Vector2 = [0, p1[1] > 0 ? -puzzle.R : puzzle.R];
+      const p4 = arcs.get(piece.edges[0])!.start;
+      path.segs.push(Geo.makePathSegLine(p1, p2, piece.edges[9]));
+      path.segs.push(Geo.makePathSegArc(p2, p3, circle, piece.edges[10]));
+      path.segs.push(Geo.makePathSegLine(p3, p4, piece.edges[11]));
+      return [piece, path];
+    }));
+  }
+
+  export function calculateShapes(puzzle: Puzzle): Map<Piece, Geo.Path<Edge>> {
+    const [left_circle, right_circle] = getTwistCircles(puzzle);
+
+    const arcs = calculateArcs(puzzle);
+    
+    if (puzzle.state.type === StateType.LeftShifted) {
+      const left_shift_trans = getShiftTransformation(puzzle);
+      for (const piece of Puzzle.getTwistPiece(puzzle, true, 0))
+        for (const edge of piece.edges)
+          if (arcs.has(edge))
+            arcs.set(edge, transformArc(arcs.get(edge)!, left_shift_trans));
+    }
+    if (puzzle.state.type === StateType.RightShifted) {
+      const right_shift_trans = getShiftTransformation(puzzle);
+      for (const piece of Puzzle.getTwistPiece(puzzle, false, 1))
+        for (const edge of piece.edges)
+          if (arcs.has(edge))
+            arcs.set(edge, transformArc(arcs.get(edge)!, right_shift_trans));
+    }
+
+    const result = new Map<Piece, Geo.Path<Edge>>();
+
+    const left_center_pieces = new Set(Puzzle.getCenterEdges(puzzle, true, 0).map(edge => edge.adj.aff));
+    for (const piece of puzzle.pieces) {
+      const path: Geo.Path<Edge> = { is_closed: true, segs: [] };
+      if (piece.type === PieceType.CenterPiece) {
+        const center_point = left_center_pieces.has(piece) ? left_circle.center : right_circle.center;
+        path.segs.push(Geo.makePathSegLine(center_point, arcs.get(piece.edges[1])!.start, piece.edges[0]));
+        for (const edge of piece.edges.slice(1, 3)) {
+          const arc = arcs.get(edge)!;
+          path.segs.push(Geo.makePathSegArc(arc.start, arc.end, arc.circle, edge));
+        }
+        path.segs.push(Geo.makePathSegLine(arcs.get(piece.edges[2])!.end, center_point, piece.edges[3]));
+
+      } else if (piece.type === PieceType.CornerPiece || piece.type === PieceType.EdgePiece) {
+        for (const edge of piece.edges) {
+          const arc = arcs.get(edge)!;
+          path.segs.push(Geo.makePathSegArc(arc.start, arc.end, arc.circle, edge));
+        }
+      }
+      result.set(piece, path);
+    }
+
+    for (const sheet of [0, 1]) {
+      for (const [piece, shape] of makeBoundaryShapes(puzzle, arcs, sheet)) {
+        result.set(piece, shape);
+      }
+    }
+
+    return result;
+  }
+}
+
+export type PrincipalPuzzle = {
+  space: Puzzle;
+  rift_offset: number; // -1 ~ +1
+  rift_angle: Geo.Angle; // 0 ~ 4 pi
+  ramified_angles: {
+    left: [piece:Piece, n:number]; // n: 0 ~ 12
+    right: [piece:Piece, n:number]; // n: 0 ~ 12
+  };
+};
+
+export namespace PrincipalPuzzle {
+  const MAX_RIFT_OFFSET = 0.8;
+
+  export function make(radius: Geo.Distance, center_x: Geo.Distance, R: Geo.Distance): PrincipalPuzzle {
+    console.assert(center_x > 0);
+    console.assert(radius > 0);
+    console.assert(center_x < radius);
+    console.assert(center_x * 2 > radius);
+    console.assert(R > center_x + radius);
+
+    const space = Puzzle.makeRamifiedV1Puzzle(radius, center_x, R);
+    const left_center_piece = Puzzle.edgeAt(space, 0, [0, 1, -1, 1]).aff;
+    const right_center_piece = Puzzle.edgeAt(space, 1, [0, 1, -1, -1]).aff;
+
+    return {
+      space,
+      rift_offset: 0,
+      rift_angle: 0,
+      ramified_angles: {
+        left: [left_center_piece, 0],
+        right: [right_center_piece, 0],
+      },
+    };
   }
 
   // `offset` is the offset of the hyperbola curve
@@ -602,19 +816,19 @@ export namespace PrincipalPuzzle {
   // left[1]: angle of rift relative to left[0].edges[0], ccw as positive
   // right[1]: angle of rift relative to right[0].edges[0], cw as positive
   function getRamifiedAngles(puzzle: PrincipalPuzzle): {left:[piece:Piece, angle:Geo.Angle], right:[piece:Piece, angle:Geo.Angle]} {
-    const left_center: Geo.Vector2 = [-puzzle.center_x, 0];
-    const right_center: Geo.Vector2 = [+puzzle.center_x, 0];
+    const left_center: Geo.Vector2 = [-puzzle.space.center_x, 0];
+    const right_center: Geo.Vector2 = [+puzzle.space.center_x, 0];
     const [left_angle, right_angle] = getRiftAngles(left_center, right_center, puzzle.rift_offset, puzzle.rift_angle);
 
     const [left_piece1, left_piece1_n] = puzzle.ramified_angles.left;
     const left_piece1_angle =
       -Math.PI/6 + left_piece1_n * Math.PI/3
-      + (puzzle.state.type === StateType.LeftShifted ? puzzle.state.angle : 0);
+      + (puzzle.space.state.type === StateType.LeftShifted ? puzzle.space.state.angle : 0);
 
     const [right_piece1, right_piece1_n] = puzzle.ramified_angles.right;
     const right_piece1_angle =
       Math.PI/6 - right_piece1_n * Math.PI/3
-      - (puzzle.state.type === StateType.RightShifted ? puzzle.state.angle : 0);
+      - (puzzle.space.state.type === StateType.RightShifted ? puzzle.space.state.angle : 0);
 
     return {
       left: [left_piece1, left_angle - left_piece1_angle],
@@ -623,44 +837,20 @@ export namespace PrincipalPuzzle {
   }
 
   export function twistTo(puzzle: PrincipalPuzzle, angle: Geo.Angle, side: boolean): boolean {
-    if (side && puzzle.state.type !== StateType.RightShifted) {
-      puzzle.state = {
-        type: StateType.LeftShifted,
-        angle: angle,
-      }
-      return true;
-    } else if (!side && puzzle.state.type !== StateType.LeftShifted) {
-      puzzle.state = {
-        type: StateType.RightShifted,
-        angle: angle,
-      }
-      return true;
-    } else {
-      return false;
-    }
+    return Puzzle.twistTo(puzzle.space, angle, side);
   }
   export function snap(puzzle: PrincipalPuzzle): [side: boolean, turn: number] {
-    if (puzzle.state.type === StateType.Aligned) return [true, 0];
-    let dn: number;
-    let side: boolean;
-    if (puzzle.state.type === StateType.LeftShifted) {
-      dn = Math.round(puzzle.state.angle / (Math.PI/3));
-      puzzle.state = { type: StateType.Aligned };
-      let n = puzzle.ramified_angles.left[1] + dn;
+    const [side, turn] = Puzzle.snap(puzzle.space);
+    if (side) {
+      let n = puzzle.ramified_angles.left[1] + turn;
       n = (n % 12 + 12) % 12;
       puzzle.ramified_angles.left[1] = n;
-      side = true;
     } else {
-      dn = Math.round(puzzle.state.angle / (Math.PI/3));
-      puzzle.state = { type: StateType.Aligned };
-      let n = puzzle.ramified_angles.right[1] + dn;
+      let n = puzzle.ramified_angles.right[1] + turn;
       n = (n % 12 + 12) % 12;
       puzzle.ramified_angles.right[1] = n;
-      side = false;
     }
-    for (const _ of indices(Math.abs(dn)))
-      Puzzle.twist(puzzle.space, side, 0, dn > 0);
-    return [side, dn];
+    return [side, turn];
   }
   export function setRift(puzzle: PrincipalPuzzle, angle: Geo.Angle, offset: number): void {
     angle = Geo.mod(angle, Math.PI*4);
@@ -670,15 +860,15 @@ export namespace PrincipalPuzzle {
     puzzle.rift_offset = offset;
   }
   export function calculateRiftTurningPoint(puzzle: PrincipalPuzzle): Geo.Point | undefined {
-    const left_center: Geo.Vector2 = [-puzzle.center_x, 0];
-    const right_center: Geo.Vector2 = [+puzzle.center_x, 0];
+    const left_center: Geo.Vector2 = [-puzzle.space.center_x, 0];
+    const right_center: Geo.Vector2 = [+puzzle.space.center_x, 0];
     const [point, is_solid] = getHyperbolaPoint(left_center, right_center, puzzle.rift_offset, puzzle.rift_angle);
     if (!is_solid) return undefined;
     return point;
   }
   export function calculateRiftAngleOffsetFromPoint(puzzle: PrincipalPuzzle, point: Geo.Point): [angle:Geo.Angle, offset:number] {
-    const left_center: Geo.Vector2 = [-puzzle.center_x, 0];
-    const right_center: Geo.Vector2 = [+puzzle.center_x, 0];
+    const left_center: Geo.Vector2 = [-puzzle.space.center_x, 0];
+    const right_center: Geo.Vector2 = [+puzzle.space.center_x, 0];
     const {offset, angle} = getHyperbolaFromPoint(left_center, right_center, point);
     const rift_angle = Geo.as0to2pi(angle - puzzle.rift_angle + Math.PI) - Math.PI + puzzle.rift_angle;
     const rift_offset = Math.max(Math.min(offset, MAX_RIFT_OFFSET), -MAX_RIFT_OFFSET);
@@ -686,12 +876,12 @@ export namespace PrincipalPuzzle {
   }
 
   export function calculateRift(puzzle: PrincipalPuzzle): Geo.Path<undefined> {
-    const left_center: Geo.Vector2 = [-puzzle.center_x, 0];
-    const right_center: Geo.Vector2 = [+puzzle.center_x, 0];
+    const left_center: Geo.Vector2 = [-puzzle.space.center_x, 0];
+    const right_center: Geo.Vector2 = [+puzzle.space.center_x, 0];
     
     const [middle, is_solid] = getHyperbolaPoint(left_center, right_center, puzzle.rift_offset, puzzle.rift_angle);
 
-    if (is_solid && Geo.norm(middle) < puzzle.R * 2) {
+    if (is_solid && Geo.norm(middle) < puzzle.space.R * 2) {
       return {
         is_closed: false,
         start: left_center,
@@ -709,9 +899,9 @@ export namespace PrincipalPuzzle {
       const dis = Math.sqrt(radius * radius - s * s) - Geo.dot(dir, from);
       return Geo.add(from, Geo.mul(dir, dis));
     }
-    const left_inf = calculateInfPoint(left_center, middle, !is_solid, puzzle.R * 1.5);
-    const right_inf = calculateInfPoint(right_center, middle, !is_solid, puzzle.R * 1.5);
-    const inf_circle: Geo.DirectionalCircle = { center: [0,0], radius: puzzle.R * 1.5 };
+    const left_inf = calculateInfPoint(left_center, middle, !is_solid, puzzle.space.R * 1.5);
+    const right_inf = calculateInfPoint(right_center, middle, !is_solid, puzzle.space.R * 1.5);
+    const inf_circle: Geo.DirectionalCircle = { center: [0,0], radius: puzzle.space.R * 1.5 };
     return {
       is_closed: false,
       start: left_center,
@@ -723,184 +913,13 @@ export namespace PrincipalPuzzle {
     };
   }
 
-  type Arc = {
-    start: Geo.Point,
-    end: Geo.Point,
-    center: Geo.Point,
-    circle: Geo.DirectionalCircle,
-  };
-  function transformArc(arc: Arc, trans: Geo.RigidTransformation): Arc {
-    return {
-      start: Geo.transformPoint(arc.start, trans),
-      end: Geo.transformPoint(arc.end, trans),
-      center: Geo.transformPoint(arc.center, trans),
-      circle: Geo.transformCircle(arc.circle, trans),
-    };
-  }
-  function flipArc(arc: Arc): Arc {
-    return {
-      start: arc.end,
-      end: arc.start,
-      center: arc.center,
-      circle: Geo.flipCircle(arc.circle),
-    };
-  }
-
-  function calculateArcs(puzzle: PrincipalPuzzle): Map<Edge, Arc> {
-    const left_trans = getTwistTransformation(puzzle, true, true);
-    const right_trans = getTwistTransformation(puzzle, false, true);
-    const [left_circle, right_circle] = getTwistCircles(puzzle);
-    
-    const intersections = Geo.intersectCircles(left_circle, right_circle);
-    console.assert(intersections !== undefined);
-    const p0 = intersections!.points[1];
-    const p1 = Geo.transformPoint(p0, right_trans);
-    const p2 = Geo.transformPoint(p1, left_trans);
-    const c: Geo.Point = [0, puzzle.center_x / Math.sqrt(3)];
-    const ang = Geo.angleBetween(right_circle.center, p2, p1);
-
-    const arcs = new Map<Edge, Arc>();
-    arcs.set(
-      Puzzle.edgeAt(puzzle.space, 0, [0, 1, 1, 0]),
-      { start: p0, end: p2, center: c, circle: right_circle },
-    );
-    arcs.set(
-      Puzzle.edgeAt(puzzle.space, 0, [0, 1, -1, 1, 0]),
-      { start: p2, end: p1, center: c, circle: right_circle },
-    );
-
-    for (const [edge, arc] of arcs) {
-      if (!arcs.has(edge.adj)) {
-        arcs.set(edge.adj, flipArc(arc));
-      }
-      if (!arcs.has(Edge.next(edge))) {
-        if (edge.aff.type === PieceType.CornerPiece) {
-          arcs.set(
-            Edge.next(edge),
-            transformArc(arc, Geo.rotateAround(Math.PI*2/3, arc.center)),
-          );
-
-        } else if (edge.aff.type === PieceType.EdgePiece && edge.adj.aff.type === PieceType.CornerPiece) {
-          const circle = Geo.flipCircle(Geo.transformCircle(
-            arc.circle,
-            Geo.rotateAround(-Math.PI*2/3, arc.center),
-          ));
-          const end = Geo.transformPoint(arc.end, Geo.rotateAround(ang, circle.center));
-          arcs.set(
-            Edge.next(edge),
-            { start: arc.end, end, center: arc.center, circle },
-          );
-
-        } else if (edge.aff.type === PieceType.EdgePiece && edge.adj.aff.type !== PieceType.CornerPiece) {
-          const center = Geo.transformPoint(
-            arc.center,
-            Geo.rotateAround(Math.PI/3, arc.circle.center)
-          );
-          const circle = Geo.flipCircle(Geo.transformCircle(
-            arc.circle,
-            Geo.rotateAround(-Math.PI*2/3, center),
-          ));
-          const end = Geo.transformPoint(
-            arc.end,
-            Geo.rotateAround(-Math.PI*2/3, center),
-          );
-          arcs.set(
-            Edge.next(edge),
-            { start: arc.end, end, center, circle },
-          );
-        }
-      }
-    }
-
-    return arcs;
-  }
-
-  function makeBoundaryShapes(
-    puzzle: PrincipalPuzzle,
-    arcs: Map<Edge, Arc>,
-    sheet: number
-  ): Map<Piece, Geo.Path<Edge>> {
-    const pieceBR = Puzzle.edgeAt(puzzle.space, sheet, []).aff;
-    const pieceBL = Puzzle.edgeAt(puzzle.space, sheet, [-1, 0]).aff;
-
-    const circle: Geo.DirectionalCircle = { center: [0, 0], radius: puzzle.R };
-
-    return new Map([pieceBL, pieceBR].map(piece => {
-      const path: Geo.Path<Edge> = { is_closed: true, segs: [] };
-      for (const edge of piece.edges.slice(0, 9)) {
-        const arc = arcs.get(edge)!;
-        path.segs.push(Geo.makePathSegArc(arc.start, arc.end, arc.circle, edge));
-      }
-      const p1 = arcs.get(piece.edges[8])!.end;
-      const p2: Geo.Vector2 = [0, p1[1] > 0 ? puzzle.R : -puzzle.R];
-      const p3: Geo.Vector2 = [0, p1[1] > 0 ? -puzzle.R : puzzle.R];
-      const p4 = arcs.get(piece.edges[0])!.start;
-      path.segs.push(Geo.makePathSegLine(p1, p2, piece.edges[9]));
-      path.segs.push(Geo.makePathSegArc(p2, p3, circle, piece.edges[10]));
-      path.segs.push(Geo.makePathSegLine(p3, p4, piece.edges[11]));
-      return [piece, path];
-    }));
-  }
-
-  export function calculateShapes(puzzle: PrincipalPuzzle): Map<Piece, Geo.Path<Edge>> {
-    const [left_circle, right_circle] = getTwistCircles(puzzle);
-
-    const arcs = calculateArcs(puzzle);
-    
-    if (puzzle.state.type === StateType.LeftShifted) {
-      const left_shift_trans = getShiftTransformation(puzzle);
-      for (const piece of Puzzle.getTwistPiece(puzzle.space, true, 0))
-        for (const edge of piece.edges)
-          if (arcs.has(edge))
-            arcs.set(edge, transformArc(arcs.get(edge)!, left_shift_trans));
-    }
-    if (puzzle.state.type === StateType.RightShifted) {
-      const right_shift_trans = getShiftTransformation(puzzle);
-      for (const piece of Puzzle.getTwistPiece(puzzle.space, false, 1))
-        for (const edge of piece.edges)
-          if (arcs.has(edge))
-            arcs.set(edge, transformArc(arcs.get(edge)!, right_shift_trans));
-    }
-
-    const result = new Map<Piece, Geo.Path<Edge>>();
-
-    const left_center_pieces = new Set(Puzzle.getCenterEdges(puzzle.space, true, 0).map(edge => edge.adj.aff));
-    for (const piece of puzzle.space.pieces) {
-      const path: Geo.Path<Edge> = { is_closed: true, segs: [] };
-      if (piece.type === PieceType.CenterPiece) {
-        const center_point = left_center_pieces.has(piece) ? left_circle.center : right_circle.center;
-        path.segs.push(Geo.makePathSegLine(center_point, arcs.get(piece.edges[1])!.start, piece.edges[0]));
-        for (const edge of piece.edges.slice(1, 3)) {
-          const arc = arcs.get(edge)!;
-          path.segs.push(Geo.makePathSegArc(arc.start, arc.end, arc.circle, edge));
-        }
-        path.segs.push(Geo.makePathSegLine(arcs.get(piece.edges[2])!.end, center_point, piece.edges[3]));
-
-      } else if (piece.type === PieceType.CornerPiece || piece.type === PieceType.EdgePiece) {
-        for (const edge of piece.edges) {
-          const arc = arcs.get(edge)!;
-          path.segs.push(Geo.makePathSegArc(arc.start, arc.end, arc.circle, edge));
-        }
-      }
-      result.set(piece, path);
-    }
-
-    for (const sheet of [0, 1]) {
-      for (const [piece, shape] of makeBoundaryShapes(puzzle, arcs, sheet)) {
-        result.set(piece, shape);
-      }
-    }
-
-    return result;
-  }
-
   export function calculateClippedShapes(
     puzzle: PrincipalPuzzle,
   ): {
     principal: Map<Piece, Geo.Path<Geo.CutSource<Edge, undefined>>[]>,
     complementary: Map<Piece, Geo.Path<Geo.CutSource<Edge, undefined>>[]>,
   } | undefined {
-    const shapes = calculateShapes(puzzle);
+    const shapes = Puzzle.calculateShapes(puzzle.space);
     const rift = calculateRift(puzzle);
     let res = calculateClippedShapes_(shapes, rift, puzzle);
     const RETRY = 5;
@@ -1074,9 +1093,9 @@ export namespace PrincipalPuzzle {
     const left_cycle_adj = left_cycle.map(edge => edge.adj).reverse();
     const right_cycle_adj = right_cycle.map(edge => edge.adj).reverse();
 
-    if (puzzle.state.type === StateType.Aligned
-      || puzzle.state.type === StateType.LeftShifted && !left_cycle.includes(edge) && !left_cycle_adj.includes(edge)
-      || puzzle.state.type === StateType.RightShifted && !right_cycle.includes(edge) && !right_cycle_adj.includes(edge)) {
+    if (puzzle.space.state.type === StateType.Aligned
+      || puzzle.space.state.type === StateType.LeftShifted && !left_cycle.includes(edge) && !left_cycle_adj.includes(edge)
+      || puzzle.space.state.type === StateType.RightShifted && !right_cycle.includes(edge) && !right_cycle_adj.includes(edge)) {
       return [ {edge: edge.adj, offset: seg.len, from: 0, to: seg.len} ];
     }
 
@@ -1084,8 +1103,8 @@ export namespace PrincipalPuzzle {
     cycle.push(...cycle.splice(0, cycle.indexOf(edge)));
 
     const res: {edge:Edge, offset:Geo.Distance|Geo.Angle, from:Geo.Distance|Geo.Angle, to:Geo.Distance|Geo.Angle}[] = [];
-    if (puzzle.state.angle >= 0) {
-      let offset = -puzzle.state.angle;
+    if (puzzle.space.state.angle >= 0) {
+      let offset = -puzzle.space.state.angle;
       for (let n = 0;; n = (n + 1) % cycle.length) {
         const adj_edge = cycle[n].adj;
         const adj_seg = shapes.get(adj_edge.aff)!.segs[adj_edge.aff.edges.indexOf(adj_edge)];
@@ -1103,7 +1122,7 @@ export namespace PrincipalPuzzle {
         const n = 0;
         const adj_edge = cycle[n].adj;
         const adj_seg = shapes.get(adj_edge.aff)!.segs[adj_edge.aff.edges.indexOf(adj_edge)];
-        offset = -puzzle.state.angle + adj_seg.len;
+        offset = -puzzle.space.state.angle + adj_seg.len;
       }
       for (let n = 0;; n = (n + cycle.length - 1) % cycle.length) {
         const adj_edge = cycle[n].adj;
@@ -1133,7 +1152,7 @@ function getTextureFunction(
   puzzle: PrincipalPuzzle,
   scale: number,
 ): [Complex.ComplexFunction, Complex.ComplexFunction, Complex.ComplexFunction, Complex.ComplexFunction] {
-  const d = puzzle.center_x;
+  const d = puzzle.space.center_x;
   
   const f1 = (z: Complex.ComplexNumber) => Complex.mul(
     Complex.pow(Complex.add(z, Complex.c(+d, 0)), 0.5),
@@ -1234,22 +1253,22 @@ export namespace PrincipalPuzzleWithTexture {
 
   export function getPositions<Image>(puzzle: PrincipalPuzzleWithTexture<Image>): Map<Piece, Geo.RigidTransformation> {
     const positions = new Map(puzzle.unshifted_positions);
-    if (puzzle.puzzle.state.type === StateType.LeftShifted) {
+    if (puzzle.puzzle.space.state.type === StateType.LeftShifted) {
       const left_shift_trans =
         Geo.compose(
-          Geo.translate([puzzle.puzzle.center_x, 0]),
-          Geo.rotate(puzzle.puzzle.state.angle),
-          Geo.translate([-puzzle.puzzle.center_x, 0]),
+          Geo.translate([puzzle.puzzle.space.center_x, 0]),
+          Geo.rotate(puzzle.puzzle.space.state.angle),
+          Geo.translate([-puzzle.puzzle.space.center_x, 0]),
         );
       for (const piece of Puzzle.getTwistPiece(puzzle.puzzle.space, true, 0))
         positions.set(piece, Geo.compose(positions.get(piece)!, left_shift_trans));
     }
-    if (puzzle.puzzle.state.type === StateType.RightShifted) {
+    if (puzzle.puzzle.space.state.type === StateType.RightShifted) {
       const right_shift_trans =
         Geo.compose(
-          Geo.translate([-puzzle.puzzle.center_x, 0]),
-          Geo.rotate(puzzle.puzzle.state.angle),
-          Geo.translate([puzzle.puzzle.center_x, 0]),
+          Geo.translate([-puzzle.puzzle.space.center_x, 0]),
+          Geo.rotate(puzzle.puzzle.space.state.angle),
+          Geo.translate([puzzle.puzzle.space.center_x, 0]),
         );
       for (const piece of Puzzle.getTwistPiece(puzzle.puzzle.space, false, 1))
         positions.set(piece, Geo.compose(positions.get(piece)!, right_shift_trans));
@@ -1281,7 +1300,7 @@ export namespace PrincipalPuzzleWithTexture {
     const [side, turn] = PrincipalPuzzle.snap(puzzle.puzzle);
     if (turn === 0) return false;
 
-    const twist_trans1 = PrincipalPuzzle.getTwistTransformation(puzzle.puzzle, side, turn > 0);
+    const twist_trans1 = Puzzle.getTwistTransformation(puzzle.puzzle.space, side, turn > 0);
     let twist_trans = Geo.id_trans();
     for (let n = 0; n < Math.abs(turn); n++)
       twist_trans = Geo.compose(twist_trans, twist_trans1);
