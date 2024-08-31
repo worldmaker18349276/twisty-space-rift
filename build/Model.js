@@ -6,6 +6,9 @@ function indices(n) {
         res.push(i);
     return res;
 }
+function zip(a, b) {
+    return indices(Math.min(a.length, b.length)).map(i => [a[i], b[i]]);
+}
 function unrollUntilLoopback(a, next) {
     const res = [a];
     while (true) {
@@ -98,8 +101,8 @@ export var Puzzle;
     function makeEdge(piece) {
         const edge = {
             aff: piece,
-            next: undefined,
-            prev: undefined,
+            next_: undefined,
+            prev_: undefined,
             adj: undefined,
             auxiliary: false,
         };
@@ -321,7 +324,6 @@ export var Puzzle;
             stands: [pieceBR.edges[0]],
         };
     }
-    Puzzle.makePieces = makePieces;
     function makeRamifiedV1Pieces() {
         // top pieces
         const top = makePieces("_top");
@@ -354,13 +356,12 @@ export var Puzzle;
         ].includes(p));
         return { pieces, stands: [top.stands[0], bot.stands[0]] };
     }
-    Puzzle.makeRamifiedV1Pieces = makeRamifiedV1Pieces;
     function makeRamifiedV1Puzzle(radius, center_x, R) {
         const { pieces, stands } = makeRamifiedV1Pieces();
         return {
             pieces,
             stands,
-            state: { type: StateType.Aligned },
+            states: [{ type: StateType.Aligned }, { type: StateType.Aligned }],
             radius,
             center_x,
             R,
@@ -383,41 +384,50 @@ export var Puzzle;
     Puzzle.getCenterEdges = getCenterEdges;
     // side = true: left
     function getTwistPiece(puzzle, side, sheet) {
-        const edges = getCircleEdges(puzzle, side, sheet);
+        const boundaries = indices(puzzle.stands.length).map(sheet => getCircleEdges(puzzle, side, sheet));
+        const sheets = new Set();
         const pieces = new Set();
-        for (const edge of edges)
+        for (const edge of boundaries[sheet])
             pieces.add(edge.aff);
         for (const piece of pieces)
-            for (const edge of piece.edges)
-                if (!edges.includes(edge))
+            for (const edge of piece.edges) {
+                let is_bd = false;
+                for (const sheet of indices(boundaries.length)) {
+                    if (boundaries[sheet].includes(edge)) {
+                        sheets.add(sheet);
+                        is_bd = true;
+                    }
+                }
+                if (!is_bd) {
                     pieces.add(edge.adj.aff);
-        return pieces;
+                }
+            }
+        return { pieces, sheets };
     }
     Puzzle.getTwistPiece = getTwistPiece;
     // side = true: left
     function twist(puzzle, side, sheet, forward) {
-        const edges = getCircleEdges(puzzle, side, sheet);
-        const edges_adj = edges.map(edge => edge.adj);
-        const edges_adj_rotated = forward ? [...edges_adj.slice(2), ...edges_adj.slice(0, 2)]
-            : [...edges_adj.slice(-2), ...edges_adj.slice(0, -2)];
-        for (const i of indices(edges.length)) {
-            adjEdges(edges[i], edges_adj_rotated[i]);
+        const { sheets } = getTwistPiece(puzzle, side, sheet);
+        const edgess = Array.from(sheets).map(sheet => getCircleEdges(puzzle, side, sheet));
+        const edgess_adj_rotated = edgess
+            .map(edges => edges.map(edge => edge.adj))
+            .map(edges_adj => forward ? [...edges_adj.slice(2), ...edges_adj.slice(0, 2)]
+            : [...edges_adj.slice(-2), ...edges_adj.slice(0, -2)]);
+        for (const [edges, edges_adj_rotated] of zip(edgess, edgess_adj_rotated)) {
+            for (const [edge, edge_adj_rotated] of zip(edges, edges_adj_rotated)) {
+                adjEdges(edge, edge_adj_rotated);
+            }
         }
     }
     // side = true: left
-    function twistTo(puzzle, angle, side) {
-        if (side && puzzle.state.type !== StateType.RightShifted) {
-            puzzle.state = {
-                type: StateType.LeftShifted,
-                angle: angle,
-            };
+    function twistTo(puzzle, side, sheet, angle) {
+        const { sheets } = getTwistPiece(puzzle, side, sheet);
+        if (side && Array.from(sheets).every(sheet => puzzle.states[sheet].type !== StateType.RightShifted)) {
+            puzzle.states = puzzle.states.map((state, sheet) => sheets.has(sheet) ? ({ type: StateType.LeftShifted, angle: angle }) : state);
             return true;
         }
-        else if (!side && puzzle.state.type !== StateType.LeftShifted) {
-            puzzle.state = {
-                type: StateType.RightShifted,
-                angle: angle,
-            };
+        else if (!side && Array.from(sheets).every(sheet => puzzle.states[sheet].type !== StateType.LeftShifted)) {
+            puzzle.states = puzzle.states.map((state, sheet) => sheets.has(sheet) ? ({ type: StateType.RightShifted, angle: angle }) : state);
             return true;
         }
         else {
@@ -426,23 +436,21 @@ export var Puzzle;
     }
     Puzzle.twistTo = twistTo;
     function snap(puzzle) {
-        if (puzzle.state.type === StateType.Aligned)
-            return [true, 0];
-        let dn;
-        let side;
-        if (puzzle.state.type === StateType.LeftShifted) {
-            dn = Math.round(puzzle.state.angle / (Math.PI / 3));
-            puzzle.state = { type: StateType.Aligned };
-            side = true;
+        const actions = [];
+        for (const sheet of indices(puzzle.states.length)) {
+            const state = puzzle.states[sheet];
+            if (state.type === StateType.Aligned)
+                continue;
+            const turn = Math.round(state.angle / (Math.PI / 3));
+            const side = state.type === StateType.LeftShifted;
+            const { sheets } = getTwistPiece(puzzle, side, sheet);
+            for (const sheet of sheets)
+                puzzle.states[sheet] = { type: StateType.Aligned };
+            for (const _ of indices(Math.abs(turn)))
+                twist(puzzle, side, sheet, turn > 0);
+            actions.push({ side, sheets, turn });
         }
-        else {
-            dn = Math.round(puzzle.state.angle / (Math.PI / 3));
-            puzzle.state = { type: StateType.Aligned };
-            side = false;
-        }
-        for (const _ of indices(Math.abs(dn)))
-            twist(puzzle, side, 0, dn > 0);
-        return [side, dn];
+        return actions;
     }
     Puzzle.snap = snap;
     function getTwistCircles(puzzle) {
@@ -453,13 +461,24 @@ export var Puzzle;
     }
     Puzzle.getTwistCircles = getTwistCircles;
     function getShiftTransformation(puzzle) {
-        if (puzzle.state.type === StateType.LeftShifted) {
-            return Geo.compose(Geo.translate([puzzle.center_x, 0]), Geo.rotate(puzzle.state.angle), Geo.translate([-puzzle.center_x, 0]));
+        const res = [];
+        const visited_sheets = [];
+        for (const sheet of indices(puzzle.states.length)) {
+            const state = puzzle.states[sheet];
+            if (visited_sheets.includes(sheet))
+                continue;
+            if (state.type === StateType.Aligned)
+                continue;
+            const side = state.type === StateType.LeftShifted;
+            const { sheets } = getTwistPiece(puzzle, side, sheet);
+            const trans = side ?
+                Geo.compose(Geo.translate([puzzle.center_x, 0]), Geo.rotate(state.angle), Geo.translate([-puzzle.center_x, 0]))
+                :
+                    Geo.compose(Geo.translate([-puzzle.center_x, 0]), Geo.rotate(state.angle), Geo.translate([puzzle.center_x, 0]));
+            res.push({ trans, side, sheets });
+            visited_sheets.push(...sheets);
         }
-        if (puzzle.state.type === StateType.RightShifted) {
-            return Geo.compose(Geo.translate([-puzzle.center_x, 0]), Geo.rotate(puzzle.state.angle), Geo.translate([puzzle.center_x, 0]));
-        }
-        return Geo.id_trans();
+        return res;
     }
     Puzzle.getShiftTransformation = getShiftTransformation;
     function getTwistTransformation(puzzle, side, forward) {
@@ -509,74 +528,111 @@ export var Puzzle;
                 }
             }
         }
-        return arcs;
-    }
-    function makeBoundaryShapes(puzzle, arcs, sheet) {
-        const pieceBR = Puzzle.edgeAt(puzzle, sheet, []).aff;
-        const pieceBL = Puzzle.edgeAt(puzzle, sheet, [-1, 0]).aff;
-        const circle = { center: [0, 0], radius: puzzle.R };
-        return new Map([pieceBL, pieceBR].map(piece => {
-            const path = { is_closed: true, segs: [] };
-            for (const edge of piece.edges.slice(0, 9)) {
-                const arc = arcs.get(edge);
-                path.segs.push(Geo.makePathSegArc(arc.start, arc.end, arc.circle, edge));
-            }
-            const p1 = arcs.get(piece.edges[8]).end;
-            const p2 = [0, p1[1] > 0 ? puzzle.R : -puzzle.R];
-            const p3 = [0, p1[1] > 0 ? -puzzle.R : puzzle.R];
-            const p4 = arcs.get(piece.edges[0]).start;
-            path.segs.push(Geo.makePathSegLine(p1, p2, piece.edges[9]));
-            path.segs.push(Geo.makePathSegArc(p2, p3, circle, piece.edges[10]));
-            path.segs.push(Geo.makePathSegLine(p3, p4, piece.edges[11]));
-            return [piece, path];
-        }));
-    }
-    function calculateShapes(puzzle) {
-        const [left_circle, right_circle] = getTwistCircles(puzzle);
-        const arcs = calculateArcs(puzzle);
-        if (puzzle.state.type === StateType.LeftShifted) {
-            const left_shift_trans = getShiftTransformation(puzzle);
-            for (const piece of Puzzle.getTwistPiece(puzzle, true, 0))
-                for (const edge of piece.edges)
-                    if (arcs.has(edge))
-                        arcs.set(edge, transformArc(arcs.get(edge), left_shift_trans));
-        }
-        if (puzzle.state.type === StateType.RightShifted) {
-            const right_shift_trans = getShiftTransformation(puzzle);
-            for (const piece of Puzzle.getTwistPiece(puzzle, false, 1))
-                for (const edge of piece.edges)
-                    if (arcs.has(edge))
-                        arcs.set(edge, transformArc(arcs.get(edge), right_shift_trans));
-        }
-        const result = new Map();
-        const left_center_pieces = new Set(Puzzle.getCenterEdges(puzzle, true, 0).map(edge => edge.adj.aff));
-        for (const piece of puzzle.pieces) {
-            const path = { is_closed: true, segs: [] };
-            if (piece.type === PieceType.CenterPiece) {
-                const center_point = left_center_pieces.has(piece) ? left_circle.center : right_circle.center;
-                path.segs.push(Geo.makePathSegLine(center_point, arcs.get(piece.edges[1]).start, piece.edges[0]));
-                for (const edge of piece.edges.slice(1, 3)) {
-                    const arc = arcs.get(edge);
-                    path.segs.push(Geo.makePathSegArc(arc.start, arc.end, arc.circle, edge));
-                }
-                path.segs.push(Geo.makePathSegLine(arcs.get(piece.edges[2]).end, center_point, piece.edges[3]));
-            }
-            else if (piece.type === PieceType.CornerPiece || piece.type === PieceType.EdgePiece) {
+        for (const shift_trans of getShiftTransformation(puzzle)) {
+            const [sheet] = shift_trans.sheets;
+            const { pieces } = getTwistPiece(puzzle, shift_trans.side, sheet);
+            for (const piece of pieces) {
                 for (const edge of piece.edges) {
                     const arc = arcs.get(edge);
-                    path.segs.push(Geo.makePathSegArc(arc.start, arc.end, arc.circle, edge));
+                    if (arc !== undefined) {
+                        arcs.set(edge, transformArc(arc, shift_trans.trans));
+                    }
                 }
             }
-            result.set(piece, path);
         }
-        for (const sheet of [0, 1]) {
-            for (const [piece, shape] of makeBoundaryShapes(puzzle, arcs, sheet)) {
-                result.set(piece, shape);
+        return arcs;
+    }
+    Puzzle.calculateArcs = calculateArcs;
+    function angles(puzzle) {
+        const left_trans = getTwistTransformation(puzzle, true, true);
+        const right_trans = getTwistTransformation(puzzle, false, true);
+        const [left_circle, right_circle] = getTwistCircles(puzzle);
+        const intersections = Geo.intersectCircles(left_circle, right_circle);
+        console.assert(intersections !== undefined);
+        const p0 = intersections.points[1];
+        const p1 = Geo.transformPoint(p0, right_trans);
+        const p2 = Geo.transformPoint(p1, left_trans);
+        const ang = Geo.angleBetween(right_circle.center, p2, p1);
+        return [ang, Math.PI / 3 - ang];
+    }
+    function isShortEdge(edge) {
+        return edge.aff.type === PieceType.EdgePiece
+            && edge.adj.aff.type !== PieceType.CornerPiece
+            || edge.aff.type === PieceType.BoundaryPiece
+                && edge.adj.aff.type === PieceType.EdgePiece
+            || edge.aff.type === PieceType.CenterPiece
+                && edge.adj.aff.type === PieceType.EdgePiece;
+    }
+    function getAdjacentEdges(puzzle, edge) {
+        if (edge.auxiliary)
+            return undefined;
+        const [short_angle, long_angle] = angles(puzzle);
+        const angle = isShortEdge(edge) ? short_angle : long_angle;
+        const cycles = getShiftTransformation(puzzle)
+            .map(shifted_trans => {
+            const [sheet] = shifted_trans.sheets;
+            return [
+                getCircleEdges(puzzle, shifted_trans.side, sheet),
+                sheet,
+            ];
+        })
+            .flatMap(([cycle, sheet]) => [
+            [cycle, sheet],
+            [cycle.map(edge => edge.adj).reverse(), sheet],
+        ]);
+        const cycle_sheet = cycles.find(([cycle, sheet]) => cycle.includes(edge));
+        if (cycle_sheet === undefined) {
+            return [{
+                    edge: edge.adj,
+                    offset: angle,
+                    from: 0,
+                    to: angle,
+                }];
+        }
+        const [cycle, sheet] = cycle_sheet;
+        cycle.push(...cycle.splice(0, cycle.indexOf(edge)));
+        if (puzzle.states[sheet].type === StateType.Aligned)
+            throw new Error("unreachable");
+        const shifted_angle = puzzle.states[sheet].angle;
+        const res = [];
+        if (shifted_angle >= 0) {
+            let offset = -shifted_angle;
+            for (let n = 0;; n = (n + 1) % cycle.length) {
+                const adj_edge = cycle[n].adj;
+                const adj_angle = isShortEdge(adj_edge) ? short_angle : long_angle;
+                const from = Math.max(offset, 0);
+                offset += adj_angle;
+                const to = Math.min(offset, angle);
+                if (to > from)
+                    res.push({ edge: adj_edge, offset, from, to });
+                if (offset > angle)
+                    break;
             }
         }
-        return result;
+        else {
+            let offset;
+            {
+                const n = 0;
+                const adj_edge = cycle[n].adj;
+                const adj_angle = isShortEdge(adj_edge) ? short_angle : long_angle;
+                offset = -shifted_angle + adj_angle;
+            }
+            for (let n = 0;; n = (n + cycle.length - 1) % cycle.length) {
+                const adj_edge = cycle[n].adj;
+                const adj_angle = isShortEdge(adj_edge) ? short_angle : long_angle;
+                const to = Math.min(offset, angle);
+                offset -= adj_angle;
+                const from = Math.max(offset, 0);
+                if (to > from)
+                    res.push({ edge: adj_edge, offset: offset + adj_angle, from, to });
+                if (offset < 0)
+                    break;
+            }
+            res.reverse();
+        }
+        return res;
     }
-    Puzzle.calculateShapes = calculateShapes;
+    Puzzle.getAdjacentEdges = getAdjacentEdges;
 })(Puzzle || (Puzzle = {}));
 export var PrincipalPuzzle;
 (function (PrincipalPuzzle) {
@@ -662,32 +718,34 @@ export var PrincipalPuzzle;
         const [left_angle, right_angle] = getRiftAngles(left_center, right_center, puzzle.rift_offset, puzzle.rift_angle);
         const [left_piece1, left_piece1_n] = puzzle.ramified_angles.left;
         const left_piece1_angle = -Math.PI / 6 + left_piece1_n * Math.PI / 3
-            + (puzzle.space.state.type === StateType.LeftShifted ? puzzle.space.state.angle : 0);
+            + (puzzle.space.states[0].type === StateType.LeftShifted ? puzzle.space.states[0].angle : 0);
         const [right_piece1, right_piece1_n] = puzzle.ramified_angles.right;
         const right_piece1_angle = Math.PI / 6 - right_piece1_n * Math.PI / 3
-            - (puzzle.space.state.type === StateType.RightShifted ? puzzle.space.state.angle : 0);
+            - (puzzle.space.states[0].type === StateType.RightShifted ? puzzle.space.states[0].angle : 0);
         return {
             left: [left_piece1, left_angle - left_piece1_angle],
             right: [right_piece1, right_angle - right_piece1_angle],
         };
     }
     function twistTo(puzzle, angle, side) {
-        return Puzzle.twistTo(puzzle.space, angle, side);
+        return Puzzle.twistTo(puzzle.space, side, 0, angle);
     }
     PrincipalPuzzle.twistTo = twistTo;
     function snap(puzzle) {
-        const [side, turn] = Puzzle.snap(puzzle.space);
-        if (side) {
-            let n = puzzle.ramified_angles.left[1] + turn;
-            n = (n % 12 + 12) % 12;
-            puzzle.ramified_angles.left[1] = n;
+        const trans = Puzzle.snap(puzzle.space);
+        for (const { side, sheets, turn } of trans) {
+            if (side) {
+                let n = puzzle.ramified_angles.left[1] + turn;
+                n = (n % 12 + 12) % 12;
+                puzzle.ramified_angles.left[1] = n;
+            }
+            else {
+                let n = puzzle.ramified_angles.right[1] + turn;
+                n = (n % 12 + 12) % 12;
+                puzzle.ramified_angles.right[1] = n;
+            }
         }
-        else {
-            let n = puzzle.ramified_angles.right[1] + turn;
-            n = (n % 12 + 12) % 12;
-            puzzle.ramified_angles.right[1] = n;
-        }
-        return [side, turn];
+        return trans;
     }
     PrincipalPuzzle.snap = snap;
     function setRift(puzzle, angle, offset) {
@@ -751,13 +809,67 @@ export var PrincipalPuzzle;
         };
     }
     PrincipalPuzzle.calculateRift = calculateRift;
+    function makeBoundaryShapes(puzzle, arcs, sheet) {
+        const pieceBR = Puzzle.edgeAt(puzzle, sheet, []).aff;
+        const pieceBL = Puzzle.edgeAt(puzzle, sheet, [-1, 0]).aff;
+        const circle = { center: [0, 0], radius: puzzle.R };
+        return new Map([pieceBL, pieceBR].map(piece => {
+            const path = { is_closed: true, segs: [] };
+            for (const edge of piece.edges.slice(0, 9)) {
+                const arc = arcs.get(edge);
+                path.segs.push(Geo.makePathSegArc(arc.start, arc.end, arc.circle, edge));
+            }
+            const p1 = arcs.get(piece.edges[8]).end;
+            const p2 = [0, p1[1] > 0 ? puzzle.R : -puzzle.R];
+            const p3 = [0, p1[1] > 0 ? -puzzle.R : puzzle.R];
+            const p4 = arcs.get(piece.edges[0]).start;
+            path.segs.push(Geo.makePathSegLine(p1, p2, piece.edges[9]));
+            path.segs.push(Geo.makePathSegArc(p2, p3, circle, piece.edges[10]));
+            path.segs.push(Geo.makePathSegLine(p3, p4, piece.edges[11]));
+            return [piece, path];
+        }));
+    }
+    function calculateShapes(puzzle) {
+        const [left_circle, right_circle] = Puzzle.getTwistCircles(puzzle.space);
+        const arcs = Puzzle.calculateArcs(puzzle.space);
+        const result = new Map();
+        const left_center_pieces = new Set(Puzzle.getCenterEdges(puzzle.space, true, 0).map(edge => edge.adj.aff));
+        for (const piece of puzzle.space.pieces) {
+            const path = { is_closed: true, segs: [] };
+            if (piece.type === PieceType.CenterPiece) {
+                const center_point = left_center_pieces.has(piece) ? left_circle.center : right_circle.center;
+                path.segs.push(Geo.makePathSegLine(center_point, arcs.get(piece.edges[1]).start, piece.edges[0]));
+                for (const edge of piece.edges.slice(1, 3)) {
+                    const arc = arcs.get(edge);
+                    path.segs.push(Geo.makePathSegArc(arc.start, arc.end, arc.circle, edge));
+                }
+                path.segs.push(Geo.makePathSegLine(arcs.get(piece.edges[2]).end, center_point, piece.edges[3]));
+            }
+            else if (piece.type === PieceType.CornerPiece || piece.type === PieceType.EdgePiece) {
+                for (const edge of piece.edges) {
+                    const arc = arcs.get(edge);
+                    path.segs.push(Geo.makePathSegArc(arc.start, arc.end, arc.circle, edge));
+                }
+            }
+            result.set(piece, path);
+        }
+        for (const sheet of [0, 1]) {
+            for (const [piece, shape] of makeBoundaryShapes(puzzle.space, arcs, sheet)) {
+                result.set(piece, shape);
+            }
+        }
+        return result;
+    }
+    PrincipalPuzzle.calculateShapes = calculateShapes;
     function calculateClippedShapes(puzzle) {
-        const shapes = Puzzle.calculateShapes(puzzle.space);
+        const shapes = calculateShapes(puzzle);
         const rift = calculateRift(puzzle);
         let res = calculateClippedShapes_(shapes, rift, puzzle);
         const RETRY = 5;
         const PERTURBATION = 1e-4;
-        for (let n = 0; res === undefined && n < RETRY; n++) {
+        for (const _ of indices(RETRY)) {
+            if (res !== undefined)
+                break;
             const rift_angle = puzzle.rift_angle;
             const rift_offset = puzzle.rift_offset;
             puzzle.rift_angle += (Math.random() - 0.5) * PERTURBATION;
@@ -851,7 +963,10 @@ export var PrincipalPuzzle;
                     continue;
                 // find adjacent edg
                 const edge = seg.source.ref.source;
-                for (const adj of getAdjacentEdges(puzzle, edge, shapes)) {
+                const len = shapes.get(edge.aff).segs[edge.aff.edges.indexOf(edge)].len;
+                const adjs = edge.auxiliary ? [{ edge: edge.adj, offset: len, from: 0, to: len }]
+                    : Puzzle.getAdjacentEdges(puzzle.space, edge);
+                for (const adj of adjs) {
                     if (adj.edge.aff.type === PieceType.InfPiece)
                         continue;
                     const from = Math.max((_a = seg.source.from) !== null && _a !== void 0 ? _a : 0, adj.from);
@@ -887,57 +1002,6 @@ export var PrincipalPuzzle;
             }
         }
         return { principal, complementary };
-    }
-    function getAdjacentEdges(puzzle, edge, shapes) {
-        const seg = shapes.get(edge.aff).segs[edge.aff.edges.indexOf(edge)];
-        const left_cycle = Puzzle.getCircleEdges(puzzle.space, true, 0);
-        const right_cycle = Puzzle.getCircleEdges(puzzle.space, false, 1);
-        const left_cycle_adj = left_cycle.map(edge => edge.adj).reverse();
-        const right_cycle_adj = right_cycle.map(edge => edge.adj).reverse();
-        if (puzzle.space.state.type === StateType.Aligned
-            || puzzle.space.state.type === StateType.LeftShifted && !left_cycle.includes(edge) && !left_cycle_adj.includes(edge)
-            || puzzle.space.state.type === StateType.RightShifted && !right_cycle.includes(edge) && !right_cycle_adj.includes(edge)) {
-            return [{ edge: edge.adj, offset: seg.len, from: 0, to: seg.len }];
-        }
-        const cycle = [left_cycle, right_cycle, left_cycle_adj, right_cycle_adj].find(cycle => cycle.includes(edge));
-        cycle.push(...cycle.splice(0, cycle.indexOf(edge)));
-        const res = [];
-        if (puzzle.space.state.angle >= 0) {
-            let offset = -puzzle.space.state.angle;
-            for (let n = 0;; n = (n + 1) % cycle.length) {
-                const adj_edge = cycle[n].adj;
-                const adj_seg = shapes.get(adj_edge.aff).segs[adj_edge.aff.edges.indexOf(adj_edge)];
-                const from = Math.max(offset, 0);
-                offset += adj_seg.len;
-                const to = Math.min(offset, seg.len);
-                if (to > from)
-                    res.push({ edge: adj_edge, offset, from, to });
-                if (offset > seg.len)
-                    break;
-            }
-        }
-        else {
-            let offset;
-            {
-                const n = 0;
-                const adj_edge = cycle[n].adj;
-                const adj_seg = shapes.get(adj_edge.aff).segs[adj_edge.aff.edges.indexOf(adj_edge)];
-                offset = -puzzle.space.state.angle + adj_seg.len;
-            }
-            for (let n = 0;; n = (n + cycle.length - 1) % cycle.length) {
-                const adj_edge = cycle[n].adj;
-                const adj_seg = shapes.get(adj_edge.aff).segs[adj_edge.aff.edges.indexOf(adj_edge)];
-                const to = Math.min(offset, seg.len);
-                offset -= adj_seg.len;
-                const from = Math.max(offset, 0);
-                if (to > from)
-                    res.push({ edge: adj_edge, offset: offset + adj_seg.len, from, to });
-                if (offset < 0)
-                    break;
-            }
-            res.reverse();
-        }
-        return res;
     }
 })(PrincipalPuzzle || (PrincipalPuzzle = {}));
 function getTextureFunction(puzzle, scale) {
@@ -1001,20 +1065,15 @@ export var PrincipalPuzzleWithTexture;
     PrincipalPuzzleWithTexture.make = make;
     function getPositions(puzzle) {
         const positions = new Map(puzzle.unshifted_positions);
-        if (puzzle.puzzle.space.state.type === StateType.LeftShifted) {
-            const left_shift_trans = Geo.compose(Geo.translate([puzzle.puzzle.space.center_x, 0]), Geo.rotate(puzzle.puzzle.space.state.angle), Geo.translate([-puzzle.puzzle.space.center_x, 0]));
-            for (const piece of Puzzle.getTwistPiece(puzzle.puzzle.space, true, 0))
-                positions.set(piece, Geo.compose(positions.get(piece), left_shift_trans));
-        }
-        if (puzzle.puzzle.space.state.type === StateType.RightShifted) {
-            const right_shift_trans = Geo.compose(Geo.translate([-puzzle.puzzle.space.center_x, 0]), Geo.rotate(puzzle.puzzle.space.state.angle), Geo.translate([puzzle.puzzle.space.center_x, 0]));
-            for (const piece of Puzzle.getTwistPiece(puzzle.puzzle.space, false, 1))
-                positions.set(piece, Geo.compose(positions.get(piece), right_shift_trans));
+        for (const trans of Puzzle.getShiftTransformation(puzzle.puzzle.space)) {
+            const [sheet] = trans.sheets;
+            for (const piece of Puzzle.getTwistPiece(puzzle.puzzle.space, trans.side, sheet).pieces)
+                positions.set(piece, Geo.compose(positions.get(piece), trans.trans));
         }
         return positions;
     }
     PrincipalPuzzleWithTexture.getPositions = getPositions;
-    function getClippedImages(puzzle) {
+    function calculateClippedImages(puzzle) {
         const positions = getPositions(puzzle);
         const clipped_shapes = PrincipalPuzzle.calculateClippedShapes(puzzle.puzzle);
         if (clipped_shapes === undefined)
@@ -1031,23 +1090,26 @@ export var PrincipalPuzzleWithTexture;
         }
         return res;
     }
-    PrincipalPuzzleWithTexture.getClippedImages = getClippedImages;
+    PrincipalPuzzleWithTexture.calculateClippedImages = calculateClippedImages;
     function twistTo(puzzle, angle, side) {
         PrincipalPuzzle.twistTo(puzzle.puzzle, angle, side);
     }
     PrincipalPuzzleWithTexture.twistTo = twistTo;
     function snap(puzzle) {
-        const [side, turn] = PrincipalPuzzle.snap(puzzle.puzzle);
-        if (turn === 0)
+        const trans = PrincipalPuzzle.snap(puzzle.puzzle);
+        if (trans.length === 0)
             return false;
-        const twist_trans1 = Puzzle.getTwistTransformation(puzzle.puzzle.space, side, turn > 0);
-        let twist_trans = Geo.id_trans();
-        for (let n = 0; n < Math.abs(turn); n++)
-            twist_trans = Geo.compose(twist_trans, twist_trans1);
-        for (const piece of Puzzle.getTwistPiece(puzzle.puzzle.space, side, 0)) {
-            let trans = puzzle.unshifted_positions.get(piece);
-            trans = Geo.compose(trans, twist_trans);
-            puzzle.unshifted_positions.set(piece, trans);
+        for (const { side, sheets, turn } of trans) {
+            const twist_trans1 = Puzzle.getTwistTransformation(puzzle.puzzle.space, side, turn > 0);
+            let twist_trans = Geo.id_trans();
+            for (const n of indices(Math.abs(turn)))
+                twist_trans = Geo.compose(twist_trans, twist_trans1);
+            const [sheet] = sheets;
+            for (const piece of Puzzle.getTwistPiece(puzzle.puzzle.space, side, sheet).pieces) {
+                let trans = puzzle.unshifted_positions.get(piece);
+                trans = Geo.compose(trans, twist_trans);
+                puzzle.unshifted_positions.set(piece, trans);
+            }
         }
         return true;
     }
@@ -1057,5 +1119,4 @@ export var PrincipalPuzzleWithTexture;
     }
     PrincipalPuzzleWithTexture.setRift = setRift;
 })(PrincipalPuzzleWithTexture || (PrincipalPuzzleWithTexture = {}));
-;
 //# sourceMappingURL=Model.js.map

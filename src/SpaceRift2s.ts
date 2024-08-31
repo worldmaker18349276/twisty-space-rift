@@ -79,6 +79,8 @@ export class SpaceRift2s {
     return new SpaceRift2s({canvas, model, cs});
   }
   init(): void {
+    Model.PrincipalPuzzleWithTexture.twistTo(this.model, Math.PI/3, true);
+    Model.PrincipalPuzzleWithTexture.snap(this.model);
     this.registerController();
     this.registerRenderEvent();
   }
@@ -97,12 +99,12 @@ export class SpaceRift2s {
       const t = (time - this.control_state.start_time) / this.control_state.duration;
       if (!Number.isFinite(t) || t > 1) {
         // console.assert(this.model.puzzle.state.type !== Model.StateType.Aligned);
-        const side = (this.model.puzzle.space.state.type === Model.StateType.LeftShifted);
+        const side = (this.model.puzzle.space.states[0].type === Model.StateType.LeftShifted);
         Model.PrincipalPuzzleWithTexture.twistTo(this.model, this.control_state.shift_to, side);
         Model.PrincipalPuzzleWithTexture.snap(this.model);
         this.control_state = {type: PuzzleControlStateType.Ready};
       } else {
-        const side = (this.model.puzzle.space.state.type === Model.StateType.LeftShifted);
+        const side = (this.model.puzzle.space.states[0].type === Model.StateType.LeftShifted);
         const shift = this.control_state.shift_from + (this.control_state.shift_to - this.control_state.shift_from) * t;
         Model.PrincipalPuzzleWithTexture.twistTo(this.model, shift, side);
       }
@@ -137,8 +139,7 @@ export class SpaceRift2s {
     ctx.fillRect(0, 0, this.canvas.clientWidth, this.canvas.clientHeight);
 
     // draw textures
-    const positions = Model.PrincipalPuzzleWithTexture.getPositions(this.model);
-    const clipped_images = Model.PrincipalPuzzleWithTexture.getClippedImages(this.model);
+    const clipped_images = Model.PrincipalPuzzleWithTexture.calculateClippedImages(this.model);
     if (clipped_images === undefined) {
       console.error("fail to calculate clipped images");
       return false;
