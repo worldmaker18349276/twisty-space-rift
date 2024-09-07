@@ -1,8 +1,7 @@
-
 import * as Model from "./Model.js";
-import * as Complex from "./Complex.js";
 import * as Draw from "./Draw.js";
 import * as Geo from "./Geometry2D.js";
+import {assert} from "./Utils.js";
 
 export enum PuzzleControlStateType { Ready, Updated, Twisting, Tearing }
 export type PuzzleControlState =
@@ -16,17 +15,22 @@ export type PuzzleControlState =
     type: PuzzleControlStateType.Twisting;
     start_time: number,
     duration: number,
-    shift_from: number,
-    shift_to: number,
+
+    side: boolean,
+    sheet: number,
+    angle_from: number,
+    angle_to: number,
   }
   | {
     type: PuzzleControlStateType.Tearing;
     start_time: number,
     duration: number,
-    rift_offset_from: number,
-    rift_offset_to: number,
-    rift_angle_from: number,
-    rift_angle_to: number,
+
+    index: number,
+    offset_from: number,
+    offset_to: number,
+    angle_from: number,
+    angle_to: number,
   };
 
 const BACKGROUND_STYLE = "rgb(30 30 30)";
@@ -38,7 +42,7 @@ const WHEEL_TO_RIFTANGLE = -0.001;
 const WHEEL_TO_RIFTOFFSET = 0.001;
 const DRAG_RIFT_RADIUS = 0.3;
 
-export class SpaceRift2s {
+export class SpaceRiftPuzzle {
   canvas: HTMLCanvasElement;
   model: Model.PrincipalPuzzleWithTexture<{canvas:HTMLCanvasElement, trans:Draw.CanvasMatrix}>;
   cs: Draw.CoordinateSystem;
@@ -56,7 +60,8 @@ export class SpaceRift2s {
     this.control_state = {type: PuzzleControlStateType.Ready};
   }
 
-  static make(canvas: HTMLCanvasElement, scale: number = 1): SpaceRift2s {
+  // scale: for debug
+  static makeSpaceRift2S(canvas: HTMLCanvasElement, scale: number = 1): SpaceRiftPuzzle {
     const radius = 1.56;
     const center_x = 1;
     const cs = Draw.makeCoordinateSystem({
@@ -69,18 +74,14 @@ export class SpaceRift2s {
 
     const image_x_range: [number, number] = [cs.x_range[0], cs.x_range[1]];
     const image_y_range: [number, number] = [cs.y_range[0], cs.y_range[1]];
-    const model = Model.PrincipalPuzzleWithTexture.make(
-      radius,
-      center_x,
-      R,
-      (f: Complex.ComplexFunction) => Draw.drawComplex(cs, f, image_x_range, image_y_range),
+    const model = Model.PrincipalPuzzleWithTexture.makeRamified2SPuzzle(
+      radius, center_x, R,
+      f => Draw.drawComplex(cs, f, image_x_range, image_y_range),
     );
     
-    return new SpaceRift2s({canvas, model, cs});
+    return new SpaceRiftPuzzle({canvas, model, cs});
   }
   init(): void {
-    Model.PrincipalPuzzleWithTexture.twistTo(this.model, Math.PI/3, true);
-    Model.PrincipalPuzzleWithTexture.snap(this.model);
     this.registerController();
     this.registerRenderEvent();
   }
@@ -96,38 +97,54 @@ export class SpaceRift2s {
       return true;
 
     } else if (this.control_state.type === PuzzleControlStateType.Twisting) {
+      // TODO: rebound if fail to twist
       const t = (time - this.control_state.start_time) / this.control_state.duration;
       if (!Number.isFinite(t) || t > 1) {
-        // console.assert(this.model.puzzle.state.type !== Model.StateType.Aligned);
-        const side = (this.model.puzzle.space.states[0].type === Model.StateType.LeftShifted);
-        Model.PrincipalPuzzleWithTexture.twistTo(this.model, this.control_state.shift_to, side);
+        assert(this.model.states[this.control_state.sheet].type !== Model.StateType.Aligned);
+        Model.PrincipalPuzzleWithTexture.twistTo(
+          this.model,
+          this.control_state.side,
+          this.control_state.sheet,
+          this.control_state.angle_to,
+        );
         Model.PrincipalPuzzleWithTexture.snap(this.model);
         this.control_state = {type: PuzzleControlStateType.Ready};
       } else {
-        const side = (this.model.puzzle.space.states[0].type === Model.StateType.LeftShifted);
-        const shift = this.control_state.shift_from + (this.control_state.shift_to - this.control_state.shift_from) * t;
-        Model.PrincipalPuzzleWithTexture.twistTo(this.model, shift, side);
+        const angle = this.control_state.angle_from + (this.control_state.angle_to - this.control_state.angle_from) * t;
+        Model.PrincipalPuzzleWithTexture.twistTo(
+          this.model,
+          this.control_state.side,
+          this.control_state.sheet,
+          angle,
+        );
       }
       return true;
 
     } else if (this.control_state.type === PuzzleControlStateType.Tearing) {
+      // TODO: rebound if fail to tear
       const t = (time - this.control_state.start_time) / this.control_state.duration;
       if (!Number.isFinite(t) || t > 1) {
         Model.PrincipalPuzzleWithTexture.setRift(
-          this.model, this.control_state.rift_angle_to, this.control_state.rift_offset_to);
+          this.model,
+          this.control_state.index,
+          {offset:this.control_state.offset_to, angle:this.control_state.angle_to},
+        );
         this.control_state = {type: PuzzleControlStateType.Ready};
       } else {
-        const angle = this.control_state.rift_angle_from
-          + (this.control_state.rift_angle_to - this.control_state.rift_angle_from) * t;
-        const offset = this.control_state.rift_offset_from
-          + (this.control_state.rift_offset_to - this.control_state.rift_offset_from) * t;
-        Model.PrincipalPuzzleWithTexture.setRift(this.model, angle, offset);
+        const angle = this.control_state.angle_from
+          + (this.control_state.angle_to - this.control_state.angle_from) * t;
+        const offset = this.control_state.offset_from
+          + (this.control_state.offset_to - this.control_state.offset_from) * t;
+        Model.PrincipalPuzzleWithTexture.setRift(
+          this.model,
+          this.control_state.index,
+          {offset, angle},
+        );
       }
       return true;
 
     } else {
-      console.assert(false, "unreachable");
-      return false;
+      assert(false);
     }
   }
   render(n: number = 0): boolean {
@@ -145,7 +162,7 @@ export class SpaceRift2s {
       return false;
     }
 
-    for (const clipped_image of clipped_images) {
+    for (const clipped_image of clipped_images.images) {
       const path = Draw.toCanvasPath(this.cs, clipped_image.region);
       const pos = Draw.toCanvasMatrix(this.cs, clipped_image.transformation);
       ctx.save();
@@ -160,7 +177,7 @@ export class SpaceRift2s {
     if (this.draw_frame) {
       ctx.lineWidth = 1;
       ctx.strokeStyle = "black";
-      for (const clipped_image of clipped_images) {
+      for (const clipped_image of clipped_images.images) {
         const path = clipped_image.region;
         const hide = path.segs.map(seg =>
           seg.source.type !== Geo.CutSourceType.Seg
@@ -176,8 +193,8 @@ export class SpaceRift2s {
 
     ctx.lineWidth = 3;
     ctx.strokeStyle = "red";
-    const rift = Model.PrincipalPuzzle.calculateRift(this.model.puzzle);
-    ctx.stroke(Draw.toCanvasPath(this.cs, rift));
+    for (const rift of clipped_images.rifts)
+      ctx.stroke(Draw.toCanvasPath(this.cs, rift));
 
     // // for debug
     // ctx.fillStyle = "white";
@@ -187,68 +204,84 @@ export class SpaceRift2s {
     return true;
   }
 
-  twist(turn: number, side: boolean, duration?: number): boolean {
+  twist(side: boolean, sheet: number, turn: number, duration?: number): boolean {
     if (this.control_state.type !== PuzzleControlStateType.Ready) return false;
     const time = Date.now();
     duration ??= TWIST_DURATION;
 
     const step_angle = Math.PI/3;
-    Model.PrincipalPuzzleWithTexture.twistTo(this.model, 0, side);
+    Model.PrincipalPuzzleWithTexture.twistTo(this.model, side, sheet, 0);
     this.control_state = {
       type: PuzzleControlStateType.Twisting,
       duration,
-      shift_from: 0,
-      shift_to: turn * step_angle,
+      side,
+      sheet,
+      angle_from: 0,
+      angle_to: turn * step_angle,
       start_time: time,
     };
     return true;
   }
-  tear(angle: Geo.Angle, offset: number, duration?: number): boolean {
+  tear(index: number, angle: Geo.Angle, offset: number, duration?: number): boolean {
     if (this.control_state.type !== PuzzleControlStateType.Ready) return false;
     const time = Date.now();
     duration ??=
-      Math.abs(angle - this.model.puzzle.rift_angle) * RIFTANGLE_TO_TIME
-      + Math.abs(offset - this.model.puzzle.rift_offset) * RIFTOFFSET_TO_TIME;
+      Math.abs(angle - this.model.rifts[index].coord.angle) * RIFTANGLE_TO_TIME
+      + Math.abs(offset - this.model.rifts[index].coord.offset) * RIFTOFFSET_TO_TIME;
 
     this.control_state = {
       type: PuzzleControlStateType.Tearing,
       duration,
-      rift_angle_from: this.model.puzzle.rift_angle,
-      rift_angle_to: angle,
-      rift_offset_from: this.model.puzzle.rift_offset,
-      rift_offset_to: offset,
+      index,
+      angle_from: this.model.rifts[index].coord.angle,
+      angle_to: angle,
+      offset_from: this.model.rifts[index].coord.offset,
+      offset_to: offset,
       start_time: time,
     };
     return true;
   }
-  tearTo(point: Geo.Point, duration?: number): boolean {
-    const [angle, offset] = Model.PrincipalPuzzle.calculateRiftAngleOffsetFromPoint(this.model.puzzle, point);
-    return this.tear(angle, offset, duration);
+  tearTo(index: number, point: Geo.Point, duration?: number): boolean {
+    const p1 = this.model.branch_cuts[this.model.rifts[index].left].point;
+    const p2 = this.model.branch_cuts[this.model.rifts[index].right].point;
+    const angle0 = this.model.rifts[index].coord.angle;
+    const {offset, angle} = Model.HyperbolicPolarCoordinate.getCoordinateFromPoint(p1, p2, point);
+    const angle_ = Geo.as_npi_pi(angle - angle0) + angle0;
+    return this.tear(index, angle_, offset, duration);
   }
-  serTearTo(point: Geo.Point): boolean {
+  serTearTo(index: number, point: Geo.Point): boolean {
     if (this.control_state.type !== PuzzleControlStateType.Ready) return false;
-    const [angle, offset] = Model.PrincipalPuzzle.calculateRiftAngleOffsetFromPoint(this.model.puzzle, point);
-    Model.PrincipalPuzzleWithTexture.setRift(this.model, angle, offset);
+    const p1 = this.model.branch_cuts[this.model.rifts[index].left].point;
+    const p2 = this.model.branch_cuts[this.model.rifts[index].right].point;
+    const angle0 = this.model.rifts[index].coord.angle;
+    const {offset, angle} = Model.HyperbolicPolarCoordinate.getCoordinateFromPoint(p1, p2, point);
+    const angle_ = Geo.as_npi_pi(angle - angle0) + angle0;
+    const succ = Model.PrincipalPuzzleWithTexture.setRift(this.model, index, {offset, angle:angle_});
+    if (!succ) return false;
     this.control_state = {type:PuzzleControlStateType.Updated};
     return true;
   }
 
   registerController(): void {
-    let is_dragging = false;
+    let dragging_rift_index: number | undefined = undefined;
 
     this.canvas.addEventListener("wheel", event => {
       event.preventDefault();
-      if (is_dragging) return;
+      if (dragging_rift_index !== undefined) return;
+      // TODO
+      const current_rift_index = 0;
 
       if (event.shiftKey) {
         this.tear(
-          this.model.puzzle.rift_angle,
-          this.model.puzzle.rift_offset + WHEEL_TO_RIFTOFFSET * event.deltaY,
+          current_rift_index,
+          this.model.rifts[current_rift_index].coord.angle,
+          this.model.rifts[current_rift_index].coord.offset + WHEEL_TO_RIFTOFFSET * event.deltaY,
         );
       } else {
         this.tear(
-          this.model.puzzle.rift_angle + WHEEL_TO_RIFTANGLE * event.deltaY,
-          this.model.puzzle.rift_offset,
+          current_rift_index,
+          this.model.rifts[current_rift_index].coord.angle + WHEEL_TO_RIFTANGLE * event.deltaY,
+          this.model.rifts[current_rift_index].coord.offset,
         );
       }
     }, false);
@@ -256,46 +289,69 @@ export class SpaceRift2s {
     this.canvas.addEventListener("contextmenu", event => event.preventDefault(), false);
     this.canvas.addEventListener("mousedown", event => {
       event.preventDefault();
-      if (is_dragging) return;
+      if (dragging_rift_index !== undefined) return;
 
       const rect = this.canvas.getBoundingClientRect();
       const x = event.clientX - rect.left;
       const y = event.clientY - rect.top;
       
       const point = Draw.toCoordinate(this.cs, [x, y]);
-      const curr = Model.PrincipalPuzzle.calculateRiftTurningPoint(this.model.puzzle);
       if (event.button === 1) {
+        // TODO
+        const current_rift_index = 0;
+
         this.tear(
-          this.model.puzzle.rift_angle + Math.PI * 2,
-          this.model.puzzle.rift_offset,
+          current_rift_index,
+          this.model.rifts[current_rift_index].coord.angle + Math.PI * 2,
+          this.model.rifts[current_rift_index].coord.offset,
           ROTATE_RIFT_DURATION,
         );
+        return;
         
-      } else if (!is_dragging && event.button === 0 && curr !== undefined && Geo.norm(Geo.sub(curr, point)) <= DRAG_RIFT_RADIUS) {
-        is_dragging = true;
+      }
+      
+      const rift_points = this.model.rifts.map(rift => 
+        Model.HyperbolicPolarCoordinate.getHyperbolaPoint(
+          this.model.branch_cuts[rift.left].point,
+          this.model.branch_cuts[rift.right].point,
+          rift.coord,
+        )
+      );
+      const drag_rift_index = rift_points.findIndex(rift_point =>
+        rift_point[1]
+        && Geo.norm(Geo.sub(rift_point[0], point)) <= DRAG_RIFT_RADIUS
+      );
+      if (dragging_rift_index === undefined && event.button === 0 && drag_rift_index !== -1) {
+        dragging_rift_index = drag_rift_index;
+        return;
+      }
 
-      } else if (event.button === 0 || event.button === 2) {
-        const [left_circle, right_circle] = Model.Puzzle.getTwistCircles(this.model.puzzle.space);
+      if (event.button === 0 || event.button === 2) {
+        // TODO
+        const current_sheet = 0;
+
+        const [left_circle, right_circle] = Model.Puzzle.getTwistCircles(this.model);
         const left_dis = Geo.norm(Geo.sub(left_circle.center, point));
         const right_dis = Geo.norm(Geo.sub(right_circle.center, point));
-        if (left_dis > this.model.puzzle.space.radius && right_dis > this.model.puzzle.space.radius) return;
+        if (left_dis > this.model.radius && right_dis > this.model.radius) return;
         const side = left_dis < right_dis;
         const turn = event.button === 0 ? 1 : -1;
-        this.twist(turn, side);
+        this.twist(side, current_sheet, turn);
+        return;
       }
     }, false);
     this.canvas.addEventListener("mousemove", event => {
-      if (!is_dragging) return;
+      if (dragging_rift_index === undefined) return;
 
       const rect = this.canvas.getBoundingClientRect();
       const x = event.clientX - rect.left;
       const y = event.clientY - rect.top;
       
       const point = Draw.toCoordinate(this.cs, [x, y]);
-      this.serTearTo(point);
+      this.serTearTo(dragging_rift_index, point);
     }, false);
-    this.canvas.addEventListener("mouseup", event => { is_dragging = false; }, false);
-    this.canvas.addEventListener("mouseleave", event => { is_dragging = false; }, false);
+    this.canvas.addEventListener("mouseup", event => { dragging_rift_index = undefined; }, false);
+    this.canvas.addEventListener("mouseleave", event => { dragging_rift_index = undefined; }, false);
   }
 
   registerRenderEvent(): void {

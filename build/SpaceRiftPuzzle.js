@@ -272,4 +272,4 @@ export class SpaceRiftPuzzle {
         this.render(counter);
     }
 }
-//# sourceMappingURL=SpaceRift2s.js.map
+//# sourceMappingURL=SpaceRiftPuzzle.js.map

@@ -107,10 +107,11 @@
     "skipLibCheck": true                                 /* Skip type checking all .d.ts files. */
   },
   "include": [
+    "./src/Utils.ts",
     "./src/Geometry2D.ts",
     "./src/Model.ts",
     "./src/Complex.ts",
     "./src/Draw.ts",
-    "./src/SpaceRift2s.ts",
+    "src/SpaceRiftPuzzle.ts",
   ]
 }
