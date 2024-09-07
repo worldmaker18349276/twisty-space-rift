@@ -993,21 +993,27 @@ export namespace PrincipalPuzzle {
   } | undefined {
     const shapes = Puzzle.calculateShapes(puzzle);
     const rift_shapes = puzzle.rifts.map(rift => calculateRiftShape(puzzle, shapes, rift));
-    let res = calculateClippedShapes_(puzzle, shapes, rift_shapes);
+    let res = calculateClippedShapes_(puzzle, shapes, rift_shapes, 0);
     const RETRY = 5;
     const PERTURBATION = 1e-4;
-    for (const _ of indices(RETRY)) {
+    for (const n of indices(RETRY)) {
       if (res !== undefined) break;
-      const perturb_rifts = puzzle.rifts.map(({left, right, coord}) => ({
+      const perturbation = {
+        angle: (Math.random() - 0.5) * PERTURBATION,
+        offset: (Math.random() - 0.5) * PERTURBATION,
+      };
+      const perturb_rifts = puzzle.rifts
+        .map(({left, right, coord}) => ({
         left,
         right,
         coord: {
-          angle: coord.angle + (Math.random() - 0.5) * PERTURBATION,
-          offset: coord.offset + (Math.random() - 0.5) * PERTURBATION,
+          angle: coord.angle + perturbation.angle,
+          offset: coord.offset + perturbation.offset,
         },
       }));
+      // console.warn(`fail to calculate clipped shapes, try again with perturbation (${n})`, perturbation);
       const rift_shapes = perturb_rifts.map(rift => calculateRiftShape(puzzle, shapes, rift));
-      res = calculateClippedShapes_(puzzle, shapes, rift_shapes);
+      res = calculateClippedShapes_(puzzle, shapes, rift_shapes, n + 1);
     }
     if (res === undefined) return undefined;
 
@@ -1038,11 +1044,12 @@ export namespace PrincipalPuzzle {
     puzzle: PrincipalPuzzle,
     shapes: Map<Piece, Geo.Path<Edge>>,
     rift_shapes: Geo.Path<undefined>[],
+    n: number,
   ): {
     principal: Map<Piece, Geo.Path<Geo.CutSource<Edge, undefined>>[]>,
     complementary: Map<Piece, Geo.Path<Geo.CutSource<Edge, undefined>>[]>,
   } | undefined {
-    const EPS = 1e-4;
+    const EPS = 1e-3;
 
     const cutted_shapes = new Map<Piece, Geo.Path<Geo.CutSource<Edge, undefined>>[]>();
 
@@ -1053,13 +1060,13 @@ export namespace PrincipalPuzzle {
 
       // TODO: multiple rifts
       const rift_shape = rift_shapes[0];
-      const res = Geo.cutRegion(shape, rift_shape, undefined);
+      const res = Geo.cutRegion(shape, rift_shape);
       if (res === undefined) {
-        console.warn("fail to clip path: fail to cut regions of normal pieces");
+        console.warn(`fail to clip path (${n}): fail to cut normal piece ${piece.name}`);
         return undefined;
       }
       if (res.some(path => Geo.hasIncompleteCut(path, rift_shape))) {
-        console.warn("fail to clip path: fail to cut regions of normal pieces");
+        console.warn(`fail to clip path (${n}): fail to cut normal piece ${piece.name}`);
         return undefined;
       }
       append(cutted_shapes, piece, res);
@@ -1079,7 +1086,7 @@ export namespace PrincipalPuzzle {
         const ramified_angle_ = calculateRiftAngle(puzzle, shapes, rift_shapes, i);
         const angle_err = Math.abs(Geo.as_npi_pi(ramified_angle_ - branch_cut.cut_angle));
         if (angle_err >= EPS)
-          console.warn(`invalid ramified angle: ${angle_err}`);
+          console.warn(`ramified angle error: ${angle_err}`);
       }
 
       const ramified_piece_indices: number[] = [];
@@ -1104,7 +1111,7 @@ export namespace PrincipalPuzzle {
           considered_as_incident: ramified_piece_indices.includes(index),
         });
         if (res === undefined) {
-          console.warn("fail to clip path: fail to cut regions of ramified pieces");
+          console.warn(`fail to clip path (${n}): fail to cut ramified piece: ${piece.name}`);
           return undefined;
         }
         append(cutted_shapes, piece, res);
@@ -1133,7 +1140,7 @@ export namespace PrincipalPuzzle {
       }
     }
     if (prin_shapes.length === 0) {
-      console.warn("fail to clip path: cannot find principal part");
+      console.warn(`fail to clip path (${n}): cannot find principal part`);
       return undefined;
     }
 
