@@ -1042,7 +1042,7 @@ export namespace PrincipalPuzzle {
     principal: Map<Piece, Geo.Path<Geo.CutSource<Edge, undefined>>[]>,
     complementary: Map<Piece, Geo.Path<Geo.CutSource<Edge, undefined>>[]>,
   } | undefined {
-    const EPS = 1e-5;
+    const EPS = 1e-4;
 
     const cutted_shapes = new Map<Piece, Geo.Path<Geo.CutSource<Edge, undefined>>[]>();
 
@@ -1053,9 +1053,12 @@ export namespace PrincipalPuzzle {
 
       // TODO: multiple rifts
       const rift_shape = rift_shapes[0];
-      const res = Geo.cutRegion(shape, rift_shape)
-        ?.map(path => Geo.glueIncompleteCutInRegion(path, rift_shape));
+      const res = Geo.cutRegion(shape, rift_shape, undefined);
       if (res === undefined) {
+        console.warn("fail to clip path: fail to cut regions of normal pieces");
+        return undefined;
+      }
+      if (res.some(path => Geo.hasIncompleteCut(path, rift_shape))) {
         console.warn("fail to clip path: fail to cut regions of normal pieces");
         return undefined;
       }
@@ -1074,8 +1077,9 @@ export namespace PrincipalPuzzle {
       
       {
         const ramified_angle_ = calculateRiftAngle(puzzle, shapes, rift_shapes, i);
-        if (Math.abs(Geo.as_npi_pi(ramified_angle_ - branch_cut.cut_angle)) >= EPS)
-          console.warn(`invalid ramified angle: ${ramified_angle_} != ${branch_cut.cut_angle}`);
+        const angle_err = Math.abs(Geo.as_npi_pi(ramified_angle_ - branch_cut.cut_angle));
+        if (angle_err >= EPS)
+          console.warn(`invalid ramified angle: ${angle_err}`);
       }
 
       const ramified_piece_indices: number[] = [];

@@ -816,7 +816,34 @@ export function cutRegion<T, S>(
   return res;
 }
 
-export function glueIncompleteCutInRegion<T, S>(path: Path<CutSource<T, S>>, cut: Path<S>): Path<CutSource<T, S>> {
+export function hasIncompleteCut<T, S>(path: Path<CutSource<T, S>>, cut: Path<S>): boolean {
+  assert(path.is_closed);
+  const seg0 = cut.segs[0];
+  const start_index = path.segs
+    .map(seg => seg.source)
+    .findIndex(source => source.ref === seg0 && source.to === 0 && source.type === CutSourceType.RightCut);
+  const incomplete_start_cut =
+    start_index !== -1
+    && start_index + 1 < path.segs.length
+    && path.segs[start_index + 1].source.type === CutSourceType.LeftCut
+    && path.segs[start_index + 1].source.ref === seg0
+    && path.segs[start_index + 1].source.from === 0;
+
+  const seg1 = cut.segs[cut.segs.length - 1];
+  const end_index = path.segs
+    .map(seg => seg.source)
+    .findIndex(source => source.ref === seg1 && source.to === seg1.len && source.type === CutSourceType.LeftCut);
+  const incomplete_end_cut =
+    end_index !== -1
+    && end_index + 1 < path.segs.length
+    && path.segs[end_index + 1].source.type === CutSourceType.RightCut
+    && path.segs[end_index + 1].source.ref === seg1
+    && path.segs[end_index + 1].source.to === seg1.len;
+
+  return incomplete_start_cut || incomplete_end_cut;
+}
+
+export function glueIncompleteCut<T, S>(path: Path<CutSource<T, S>>, cut: Path<S>): Path<CutSource<T, S>> {
   assert(path.is_closed);
   const seg0 = cut.segs[0];
   const start_index = path.segs

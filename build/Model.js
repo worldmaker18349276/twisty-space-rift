@@ -875,8 +875,8 @@ export var PrincipalPuzzle;
         return Geo.angleBetween([0, 0], ref_dir, rift_dir);
     }
     function calculateClippedShapes_(puzzle, shapes, rift_shapes) {
-        var _a, _b, _c, _d, _e;
-        const EPS = 1e-5;
+        var _a, _b, _c, _d;
+        const EPS = 1e-4;
         const cutted_shapes = new Map();
         // cut normal pieces
         for (const [piece, shape] of shapes) {
@@ -886,8 +886,12 @@ export var PrincipalPuzzle;
                 continue;
             // TODO: multiple rifts
             const rift_shape = rift_shapes[0];
-            const res = (_a = Geo.cutRegion(shape, rift_shape)) === null || _a === void 0 ? void 0 : _a.map(path => Geo.glueIncompleteCutInRegion(path, rift_shape));
+            const res = Geo.cutRegion(shape, rift_shape, undefined);
             if (res === undefined) {
+                console.warn("fail to clip path: fail to cut regions of normal pieces");
+                return undefined;
+            }
+            if (res.some(path => Geo.hasIncompleteCut(path, rift_shape))) {
                 console.warn("fail to clip path: fail to cut regions of normal pieces");
                 return undefined;
             }
@@ -904,8 +908,9 @@ export var PrincipalPuzzle;
             const branch_point = rift_side ? Geo.getStartPoint(rift_shape) : Geo.getEndPoint(rift_shape);
             {
                 const ramified_angle_ = calculateRiftAngle(puzzle, shapes, rift_shapes, i);
-                if (Math.abs(Geo.as_npi_pi(ramified_angle_ - branch_cut.cut_angle)) >= EPS)
-                    console.warn(`invalid ramified angle: ${ramified_angle_} != ${branch_cut.cut_angle}`);
+                const angle_err = Math.abs(Geo.as_npi_pi(ramified_angle_ - branch_cut.cut_angle));
+                if (angle_err >= EPS)
+                    console.warn(`invalid ramified angle: ${angle_err}`);
             }
             const ramified_piece_indices = [];
             {
@@ -967,8 +972,8 @@ export var PrincipalPuzzle;
                 for (const adj of adjs) {
                     if (adj.edge.aff.type === PieceType.InfPiece)
                         continue;
-                    const from = Math.max((_b = seg.source.from) !== null && _b !== void 0 ? _b : 0, adj.from);
-                    const to = Math.min((_c = seg.source.to) !== null && _c !== void 0 ? _c : seg.source.ref.len, adj.to);
+                    const from = Math.max((_a = seg.source.from) !== null && _a !== void 0 ? _a : 0, adj.from);
+                    const to = Math.min((_b = seg.source.to) !== null && _b !== void 0 ? _b : seg.source.ref.len, adj.to);
                     const adj_edge = adj.edge;
                     const adj_from = adj.offset - to;
                     const adj_to = adj.offset - from;
@@ -976,8 +981,8 @@ export var PrincipalPuzzle;
                         for (const adj_seg of adj_path.segs) {
                             if (!(adj_seg.source.type === Geo.CutSourceType.Seg && adj_seg.source.ref.source === adj_edge))
                                 continue;
-                            const adj_from_ = Math.max((_d = adj_seg.source.from) !== null && _d !== void 0 ? _d : 0, adj_from);
-                            const adj_to_ = Math.min((_e = adj_seg.source.to) !== null && _e !== void 0 ? _e : seg.source.ref.len, adj_to);
+                            const adj_from_ = Math.max((_c = adj_seg.source.from) !== null && _c !== void 0 ? _c : 0, adj_from);
+                            const adj_to_ = Math.min((_d = adj_seg.source.to) !== null && _d !== void 0 ? _d : seg.source.ref.len, adj_to);
                             if (adj_to_ - adj_from_ < SMALLEST_ANGLE)
                                 continue;
                             prin_cutted_shapes.add(adj_path);
