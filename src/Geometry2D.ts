@@ -343,6 +343,51 @@ export function scalePath<T>(path: Path<T>, scale: number): Path<T> {
 }
 
 
+// inside: negative distance
+export function calculateNearestPoint<T>(path: Path<T>, point: Point): {dis:number, point:Point} {
+  assert(path.is_closed);
+  const distances: {dis:number, point:Point}[] = []
+  for (const i of indices(path.segs.length)) {
+    const seg = path.segs[i];
+    if (seg.type === PathSegType.Arc) {
+      const pos =
+        seg.circle.radius > 0 ?
+          angleBetween(seg.circle.center, getStartPoint(path, i), point)
+        : angleBetween(seg.circle.center, point, getStartPoint(path, i));
+      if (!(pos > 0 && pos < seg.len)) continue;
+      const dis = norm(sub(point, seg.circle.center)) * Math.sign(seg.circle.radius) - seg.circle.radius;
+      const point_ = transformPoint(
+        getStartPoint(path, i),
+        rotateAround(pos * Math.sign(seg.circle.radius), seg.circle.center),
+      );
+      distances.push({dis, point:point_});
+    } else {
+      const pos = dot(seg.line.direction, sub(point, getStartPoint(path, i)));
+      if (!(pos > 0 && pos < seg.len)) continue;
+      const dis = -distanceToLine(seg.line, point);
+      const point_ = add(getStartPoint(path, i), mul(seg.line.direction, pos));
+      distances.push({dis, point:point_});
+    }
+  }
+  for (const i of indices(path.segs.length)) {
+    const next_seg = path.segs[i];
+    const next_dir =
+      next_seg.type === PathSegType.Line ? next_seg.line.direction
+      : mul(normalize(rot90(sub(getStartPoint(path, i), next_seg.circle.center))), Math.sign(next_seg.circle.radius));
+    const prev_seg = path.segs[mod(i - 1, path.segs.length)];
+    const prev_dir =
+      prev_seg.type === PathSegType.Line ? mul(prev_seg.line.direction, -1)
+      : mul(normalize(rot90(sub(getStartPoint(path, i), prev_seg.circle.center))), -Math.sign(prev_seg.circle.radius));
+
+    const vec = sub(point, getStartPoint(path, i));
+    const is_in_range = as_0_2pi(angleBetween([0, 0], next_dir, vec)) < as_0_2pi(angleBetween([0, 0], next_dir, prev_dir));
+    const dis = norm(vec) * (is_in_range ? -1 : 1);
+    distances.push({dis, point: getStartPoint(path, i)});
+  }
+  return distances.reduce((a, b) => Math.abs(a.dis) < Math.abs(b.dis) ? a : b);
+}
+
+
 export function intersectCircles(
   circle1: DirectionalCircle,
   circle2: DirectionalCircle,

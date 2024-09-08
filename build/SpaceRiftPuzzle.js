@@ -1,7 +1,7 @@
 import * as Model from "./Model.js";
 import * as Draw from "./Draw.js";
 import * as Geo from "./Geometry2D.js";
-import { assert } from "./Utils.js";
+import { assert, indices } from "./Utils.js";
 export var PuzzleControlStateType;
 (function (PuzzleControlStateType) {
     PuzzleControlStateType[PuzzleControlStateType["Ready"] = 0] = "Ready";
@@ -24,6 +24,8 @@ export class SpaceRiftPuzzle {
         this.model = arg.model;
         this.cs = arg.cs;
         this.control_state = { type: PuzzleControlStateType.Ready };
+        this.current_images = new Set();
+        this.current_rifts = [];
     }
     // scale: for debug
     static makeSpaceRift2S(canvas, scale = 1) {
@@ -102,7 +104,9 @@ export class SpaceRiftPuzzle {
             console.error("fail to calculate clipped images");
             return false;
         }
-        for (const clipped_image of clipped_images.images) {
+        this.current_images = clipped_images.images;
+        this.current_rifts = clipped_images.rifts;
+        for (const clipped_image of this.current_images) {
             const path = Draw.toCanvasPath(this.cs, clipped_image.region);
             const pos = Draw.toCanvasMatrix(this.cs, clipped_image.transformation);
             ctx.save();
@@ -116,7 +120,7 @@ export class SpaceRiftPuzzle {
         if (this.draw_frame) {
             ctx.lineWidth = 1;
             ctx.strokeStyle = "black";
-            for (const clipped_image of clipped_images.images) {
+            for (const clipped_image of this.current_images) {
                 const path = clipped_image.region;
                 const hide = path.segs.map(seg => seg.source.type !== Geo.CutSourceType.Seg
                     || seg.source.ref.source.auxiliary);
@@ -129,13 +133,30 @@ export class SpaceRiftPuzzle {
         }
         ctx.lineWidth = 3;
         ctx.strokeStyle = "red";
-        for (const rift of clipped_images.rifts)
+        for (const rift of this.current_rifts)
             ctx.stroke(Draw.toCanvasPath(this.cs, rift));
         // // for debug
         // ctx.fillStyle = "white";
         // ctx.font = "26px serif";
         // ctx.fillText(`${n}`, 10, 50);
         return true;
+    }
+    getPosition(event) {
+        const rect = this.canvas.getBoundingClientRect();
+        const x = event.clientX - rect.left;
+        const y = event.clientY - rect.top;
+        return Draw.toCoordinate(this.cs, [x, y]);
+    }
+    pointTo(point_) {
+        for (const images of this.current_images) {
+            const { dis, point } = Geo.calculateNearestPoint(images.region, point_);
+            if (dis < 0) {
+                return images.region.segs
+                    .map(seg => { var _a; return (_a = seg.source.ref.source) === null || _a === void 0 ? void 0 : _a.aff; })
+                    .find(piece => piece !== undefined);
+            }
+        }
+        return undefined;
     }
     twist(side, sheet, turn, duration) {
         if (this.control_state.type !== PuzzleControlStateType.Ready)
@@ -215,10 +236,7 @@ export class SpaceRiftPuzzle {
             event.preventDefault();
             if (dragging_rift_index !== undefined)
                 return;
-            const rect = this.canvas.getBoundingClientRect();
-            const x = event.clientX - rect.left;
-            const y = event.clientY - rect.top;
-            const point = Draw.toCoordinate(this.cs, [x, y]);
+            const point = this.getPosition(event);
             if (event.button === 1) {
                 // TODO
                 const current_rift_index = 0;
@@ -233,26 +251,28 @@ export class SpaceRiftPuzzle {
                 return;
             }
             if (event.button === 0 || event.button === 2) {
-                // TODO
-                const current_sheet = 0;
                 const [left_circle, right_circle] = Model.Puzzle.getTwistCircles(this.model);
                 const left_dis = Geo.norm(Geo.sub(left_circle.center, point));
                 const right_dis = Geo.norm(Geo.sub(right_circle.center, point));
                 if (left_dis > this.model.radius && right_dis > this.model.radius)
                     return;
                 const side = left_dis < right_dis;
+                const piece = this.pointTo(point);
+                if (piece === undefined)
+                    return;
+                const sheet = indices(this.model.stands.length)
+                    .find(sheet => { var _a, _b; return (_b = (_a = Model.Puzzle.getTwistPieces(this.model, side, sheet)) === null || _a === void 0 ? void 0 : _a.pieces.has(piece)) !== null && _b !== void 0 ? _b : false; });
+                if (sheet === undefined)
+                    return;
                 const turn = event.button === 0 ? 1 : -1;
-                this.twist(side, current_sheet, turn);
+                this.twist(side, sheet, turn);
                 return;
             }
         }, false);
         this.canvas.addEventListener("mousemove", event => {
             if (dragging_rift_index === undefined)
                 return;
-            const rect = this.canvas.getBoundingClientRect();
-            const x = event.clientX - rect.left;
-            const y = event.clientY - rect.top;
-            const point = Draw.toCoordinate(this.cs, [x, y]);
+            const point = this.getPosition(event);
             this.serTearTo(dragging_rift_index, point);
         }, false);
         this.canvas.addEventListener("mouseup", event => { dragging_rift_index = undefined; }, false);
