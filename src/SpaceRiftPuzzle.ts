@@ -34,6 +34,8 @@ export type PuzzleControlState =
   };
 
 const BACKGROUND_STYLE = "rgb(30 30 30)";
+const FRAME_COLOR = "black";
+const RIFT_COLOR = "rgb(30 30 30)";
 const RIFTANGLE_TO_TIME = 100;
 const RIFTOFFSET_TO_TIME = 300;
 const TWIST_DURATION = 300;
@@ -201,7 +203,7 @@ export class SpaceRiftPuzzle {
     // draw frame
     if (this.draw_frame) {
       ctx.lineWidth = 1;
-      ctx.strokeStyle = "black";
+      ctx.strokeStyle = FRAME_COLOR;
       for (const clipped_image of this.current_images) {
         const path = clipped_image.region;
         const hide = path.segs.map(seg =>
@@ -217,7 +219,7 @@ export class SpaceRiftPuzzle {
     }
 
     ctx.lineWidth = 3;
-    ctx.strokeStyle = "red";
+    ctx.strokeStyle = RIFT_COLOR;
     for (const rift of this.current_rifts)
       ctx.stroke(Draw.toCanvasPath(this.cs, rift));
 
