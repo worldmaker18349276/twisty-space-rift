@@ -1150,15 +1150,17 @@ export namespace PrincipalPuzzle {
       const rift_shape = rift_shapes[rift_index];
       const branch_point = rift_side ? Geo.getStartPoint(rift_shape) : Geo.getEndPoint(rift_shape);
       
+      let cut_angle = branch_cut.cut_angle;
       {
         const ramified_angle_ = calculateRiftAngle(puzzle, shapes, rift_shapes, i);
-        const angle_err = Math.abs(Geo.as_npi_pi(ramified_angle_ - branch_cut.cut_angle));
+        const angle_err = Math.abs(Geo.as_npi_pi(ramified_angle_ - cut_angle));
         if (angle_err >= ANG_EPS)
           console.warn(`ramified angle error: ${angle_err}`);
         const pos_err = Geo.norm(Geo.sub(
           rift_side ? Geo.getStartPoint(rift_shapes[rift_index]) : Geo.getEndPoint(rift_shapes[rift_index]),
           branch_cut.point,
         ));
+        cut_angle = Geo.as_npi_pi(ramified_angle_ - cut_angle) + cut_angle;
         if (pos_err >= POS_EPS)
           console.warn(`ramified position error: ${pos_err}`);
       }
@@ -1170,7 +1172,7 @@ export namespace PrincipalPuzzle {
           .map(([start, end]) => Geo.angleBetween(branch_point, start, end))
           .map((_, i, angles) => angles.slice(0, i + 1).reduce((a, b) => a + b));
         const ramified_piece_indices_ = indices(ramified.turn)
-          .map(n => mod(branch_cut.cut_angle + Math.PI*2 * n, Math.PI*2 * ramified.turn))
+          .map(n => mod(cut_angle + Math.PI*2 * n, Math.PI*2 * ramified.turn))
           .map(ramified_angle => angle_upperbounds.findIndex(upperbound => ramified_angle < upperbound));
         assert(!ramified_piece_indices_.includes(-1));
         ramified_piece_indices.push(...ramified_piece_indices_);
@@ -1186,6 +1188,10 @@ export namespace PrincipalPuzzle {
         });
         if (res === undefined) {
           console.warn(`fail to clip path (${n}): fail to cut ramified piece: ${piece.name}`);
+          return undefined;
+        }
+        if (res.some(path => Geo.hasIncompleteCut(path, rift_shape))) {
+          console.warn(`fail to clip path (${n}): fail to cut ramified piece ${piece.name}`);
           return undefined;
         }
         append(cutted_shapes, piece, res);
