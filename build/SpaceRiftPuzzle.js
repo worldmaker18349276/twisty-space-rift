@@ -222,13 +222,16 @@ export class SpaceRiftPuzzle {
             event.preventDefault();
             if (dragging_rift_index !== undefined)
                 return;
-            // TODO
-            const current_rift_index = 0;
+            const point = this.getPosition(event);
+            const rift_index = this.current_rifts
+                .map((rift, index) => ({ dis: Math.abs(Geo.calculateNearestPoint(rift, point).dis), index }))
+                .reduce((a, b) => a.dis < b.dis ? a : b)
+                .index;
             if (event.shiftKey) {
-                this.tear(current_rift_index, this.model.rifts[current_rift_index].coord.angle, this.model.rifts[current_rift_index].coord.offset + WHEEL_TO_RIFTOFFSET * event.deltaY);
+                this.tear(rift_index, this.model.rifts[rift_index].coord.angle, this.model.rifts[rift_index].coord.offset + WHEEL_TO_RIFTOFFSET * event.deltaY);
             }
             else {
-                this.tear(current_rift_index, this.model.rifts[current_rift_index].coord.angle + WHEEL_TO_RIFTANGLE * event.deltaY, this.model.rifts[current_rift_index].coord.offset);
+                this.tear(rift_index, this.model.rifts[rift_index].coord.angle + WHEEL_TO_RIFTANGLE * event.deltaY, this.model.rifts[rift_index].coord.offset);
             }
         }, false);
         this.canvas.addEventListener("contextmenu", event => event.preventDefault(), false);
@@ -238,9 +241,11 @@ export class SpaceRiftPuzzle {
                 return;
             const point = this.getPosition(event);
             if (event.button === 1) {
-                // TODO
-                const current_rift_index = 0;
-                this.tear(current_rift_index, this.model.rifts[current_rift_index].coord.angle + Math.PI * 2, this.model.rifts[current_rift_index].coord.offset, ROTATE_RIFT_DURATION);
+                const rift_index = this.current_rifts
+                    .map((rift, index) => ({ dis: Math.abs(Geo.calculateNearestPoint(rift, point).dis), index }))
+                    .reduce((a, b) => a.dis < b.dis ? a : b)
+                    .index;
+                this.tear(rift_index, this.model.rifts[rift_index].coord.angle + Math.PI * 2, this.model.rifts[rift_index].coord.offset, ROTATE_RIFT_DURATION);
                 return;
             }
             const rift_points = this.model.rifts.map(rift => Model.HyperbolicPolarCoordinate.getHyperbolaPoint(this.model.branch_cuts[rift.left].point, this.model.branch_cuts[rift.right].point, rift.coord));
