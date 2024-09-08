@@ -1,6 +1,7 @@
 import * as Model from "./Model.js";
 import * as Draw from "./Draw.js";
 import * as Geo from "./Geometry2D.js";
+import * as Complex from "./Complex.js";
 import {assert, indices} from "./Utils.js";
 
 export enum PuzzleControlStateType { Ready, Updated, Twisting, Tearing }
@@ -172,6 +173,23 @@ export class SpaceRiftPuzzle {
       assert(false);
     }
   }
+
+  renderComplex(f: Complex.ComplexFunction): boolean {
+    const ctx = this.canvas.getContext("2d");
+    if (ctx === null) return false;
+
+    const image_x_range: [number, number] = [this.cs.x_range[0], this.cs.x_range[1]];
+    const image_y_range: [number, number] = [this.cs.y_range[0], this.cs.y_range[1]];
+    const image = Draw.drawComplex(this.cs, f, image_x_range, image_y_range);
+
+    ctx.save();
+    ctx.transform(...image.trans);
+    ctx.drawImage(image.canvas, 0, 0);
+    ctx.restore();
+
+    return true;
+  }
+
   render(n: number = 0): boolean {
     const ctx = this.canvas.getContext("2d");
     if (ctx === null) return false;

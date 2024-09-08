@@ -5,6 +5,9 @@ export type ComplexFunction = (z: ComplexNumber) => ComplexNumber;
 export function c(x: number, y: number = 0): ComplexNumber {
   return [x, y];
 }
+export function omega(n: number): ComplexNumber {
+  return [Math.cos(Math.PI*2/n), Math.sin(Math.PI*2/n)];
+}
 export function add(...zs: ComplexNumber[]): ComplexNumber {
   const r: ComplexNumber = [0, 0];
   for (const z of zs) {

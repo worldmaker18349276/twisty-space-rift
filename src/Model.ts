@@ -1353,64 +1353,76 @@ export type ClippedImage<Image> = {
   region: Geo.Path<Geo.CutSource<Edge, undefined>>;
 };
 
-function get2STextureFunction(
-  puzzle: PrincipalPuzzle,
-  scale: number,
-): [Complex.ComplexFunction, Complex.ComplexFunction, Complex.ComplexFunction, Complex.ComplexFunction] {
-  const d = puzzle.center_x;
-  
-  const f1 = (z: Complex.ComplexNumber) => Complex.mul(
-    Complex.pow(Complex.add(z, Complex.c(+d, 0)), 0.5),
-    Complex.pow(Complex.add(z, Complex.c(-d, 0)), 0.5),
-    Complex.c(scale, 0),
-  );
-  const f1_ = (z: Complex.ComplexNumber) => Complex.mul(
-    Complex.pow(Complex.add(z, Complex.c(+d, 0)), 0.5),
-    Complex.pow(Complex.add(z, Complex.c(-d, 0)), 0.5),
-    Complex.c(-scale, 0),
-  );
-  const f2 = (z: Complex.ComplexNumber) => Complex.mul(
-    Complex.pow(Complex.add(z, Complex.c(+d, 0)), 0.5),
-    Complex.pow(Complex.mul(Complex.add(z, Complex.c(-d, 0)), Complex.c(-1, 0)), 0.5),
-    Complex.c(0, -scale),
-  );
-  const f2_ = (z: Complex.ComplexNumber) => Complex.mul(
-    Complex.pow(Complex.add(z, Complex.c(+d, 0)), 0.5),
-    Complex.pow(Complex.mul(Complex.add(z, Complex.c(-d, 0)), Complex.c(-1, 0)), 0.5),
-    Complex.c(0, scale),
-  );
-  
-  return [f1, f1_, f2, f2_];
-}
+namespace Textures {
+  export function get2STextureFunction(
+    puzzle: PrincipalPuzzle,
+    scale: number,
+  ): [
+    Complex.ComplexFunction,
+    Complex.ComplexFunction,
+    Complex.ComplexFunction,
+    Complex.ComplexFunction,
+  ] {
+    const d = puzzle.center_x;
+    
+    const f1 = (z: Complex.ComplexNumber) => Complex.mul(
+      Complex.pow(Complex.add(z, Complex.c(+d, 0)), 0.5),
+      Complex.pow(Complex.add(z, Complex.c(-d, 0)), 0.5),
+      Complex.c(scale, 0),
+    );
+    const f2 = (z: Complex.ComplexNumber) => Complex.mul(
+      Complex.pow(Complex.add(z, Complex.c(+d, 0)), 0.5),
+      Complex.pow(Complex.mul(Complex.add(z, Complex.c(-d, 0)), Complex.c(-1, 0)), 0.5),
+      Complex.c(0, -scale),
+    );
+    const f3 = (z: Complex.ComplexNumber) => Complex.mul(
+      Complex.pow(Complex.add(z, Complex.c(+d, 0)), 0.5),
+      Complex.pow(Complex.add(z, Complex.c(-d, 0)), 0.5),
+      Complex.c(-scale, 0),
+    );
+    const f4 = (z: Complex.ComplexNumber) => Complex.mul(
+      Complex.pow(Complex.add(z, Complex.c(+d, 0)), 0.5),
+      Complex.pow(Complex.mul(Complex.add(z, Complex.c(-d, 0)), Complex.c(-1, 0)), 0.5),
+      Complex.c(0, scale),
+    );
+    
+    return [f1, f2, f3, f4];
+  }
 
-function get2SpTextureFunction(
-  puzzle: PrincipalPuzzle,
-  scale: number,
-): [Complex.ComplexFunction, Complex.ComplexFunction, Complex.ComplexFunction, Complex.ComplexFunction] {
-  const d = puzzle.center_x / Math.sqrt(3);
-  
-  const f1 = (z: Complex.ComplexNumber) => Complex.mul(
-    Complex.pow(Complex.add(Complex.mul(z, Complex.c(0, +1)), Complex.c(+d, 0)), 0.5),
-    Complex.pow(Complex.add(Complex.mul(z, Complex.c(0, +1)), Complex.c(-d, 0)), 0.5),
-    Complex.c(0, -scale),
-  );
-  const f1_ = (z: Complex.ComplexNumber) => Complex.mul(
-    Complex.pow(Complex.add(Complex.mul(z, Complex.c(0, +1)), Complex.c(+d, 0)), 0.5),
-    Complex.pow(Complex.add(Complex.mul(z, Complex.c(0, +1)), Complex.c(-d, 0)), 0.5),
-    Complex.c(0, scale),
-  );
-  const f2 = (z: Complex.ComplexNumber) => Complex.mul(
-    Complex.pow(Complex.add(Complex.mul(z, Complex.c(0, +1)), Complex.c(+d, 0)), 0.5),
-    Complex.pow(Complex.add(Complex.mul(z, Complex.c(0, -1)), Complex.c(+d, 0)), 0.5),
-    Complex.c(-scale, 0),
-  );
-  const f2_ = (z: Complex.ComplexNumber) => Complex.mul(
-    Complex.pow(Complex.add(Complex.mul(z, Complex.c(0, +1)), Complex.c(+d, 0)), 0.5),
-    Complex.pow(Complex.add(Complex.mul(z, Complex.c(0, -1)), Complex.c(+d, 0)), 0.5),
-    Complex.c(scale, 0),
-  );
-  
-  return [f1, f1_, f2, f2_];
+  export function get2SpTextureFunction(
+    puzzle: PrincipalPuzzle,
+    scale: number,
+  ): [
+    Complex.ComplexFunction,
+    Complex.ComplexFunction,
+    Complex.ComplexFunction,
+    Complex.ComplexFunction,
+  ] {
+    const d = puzzle.center_x / Math.sqrt(3);
+    
+    const f1 = (z: Complex.ComplexNumber) => Complex.mul(
+      Complex.pow(Complex.add(Complex.mul(z, Complex.c(0, +1)), Complex.c(+d, 0)), 0.5),
+      Complex.pow(Complex.add(Complex.mul(z, Complex.c(0, +1)), Complex.c(-d, 0)), 0.5),
+      Complex.c(0, -scale),
+    );
+    const f2 = (z: Complex.ComplexNumber) => Complex.mul(
+      Complex.pow(Complex.add(Complex.mul(z, Complex.c(0, +1)), Complex.c(+d, 0)), 0.5),
+      Complex.pow(Complex.add(Complex.mul(z, Complex.c(0, -1)), Complex.c(+d, 0)), 0.5),
+      Complex.c(-scale, 0),
+    );
+    const f3 = (z: Complex.ComplexNumber) => Complex.mul(
+      Complex.pow(Complex.add(Complex.mul(z, Complex.c(0, +1)), Complex.c(+d, 0)), 0.5),
+      Complex.pow(Complex.add(Complex.mul(z, Complex.c(0, +1)), Complex.c(-d, 0)), 0.5),
+      Complex.c(0, scale),
+    );
+    const f4 = (z: Complex.ComplexNumber) => Complex.mul(
+      Complex.pow(Complex.add(Complex.mul(z, Complex.c(0, +1)), Complex.c(+d, 0)), 0.5),
+      Complex.pow(Complex.add(Complex.mul(z, Complex.c(0, -1)), Complex.c(+d, 0)), 0.5),
+      Complex.c(scale, 0),
+    );
+    
+    return [f1, f2, f3, f4];
+  }
 }
 
 export type PrincipalPuzzleWithTexture<Image> = PrincipalPuzzle & {
@@ -1420,10 +1432,15 @@ export type PrincipalPuzzleWithTexture<Image> = PrincipalPuzzle & {
 };
 
 export namespace PrincipalPuzzleWithTexture {
-  function _makeRamified2SPuzzle<Image>(
-    puzzle: PrincipalPuzzle,
-    textures: Image[],
+  export function makeRamified2SPuzzle<Image>(
+    radius: Geo.Distance,
+    center_x: Geo.Distance,
+    R: Geo.Distance,
+    draw_image: (f: Complex.ComplexFunction) => Image,
+    scale: number = 1,
   ): PrincipalPuzzleWithTexture<Image> {
+    const puzzle = PrincipalPuzzle.makeRamified2SPuzzle(radius, center_x, R);
+    const textures = Textures.get2STextureFunction(puzzle, scale).map(draw_image);
     const unshifted_positions = new Map(puzzle.pieces.map(piece => [piece, Geo.id_trans()]));
 
     const texture_indices = new Map<Piece, number>();
@@ -1433,9 +1450,9 @@ export namespace PrincipalPuzzleWithTexture {
       texture_indices.set(edgeL.aff, 3);
       texture_indices.set(Edge.walk(edgeL, [0]).aff, 3);
       texture_indices.set(Edge.walk(edgeL, [2]).aff, 3);
-      texture_indices.set(edgeR.aff, 2);
-      texture_indices.set(Edge.walk(edgeR, [0]).aff, 2);
-      texture_indices.set(Edge.walk(edgeR, [2]).aff, 2);
+      texture_indices.set(edgeR.aff, 1);
+      texture_indices.set(Edge.walk(edgeR, [0]).aff, 1);
+      texture_indices.set(Edge.walk(edgeR, [2]).aff, 1);
       
       const prin = new Set<Piece>();
       prin.add(Puzzle.edgeAt(puzzle, 0, []).aff);
@@ -1462,7 +1479,7 @@ export namespace PrincipalPuzzleWithTexture {
       for (const piece of prin)
         texture_indices.set(piece, 0);
       for (const piece of comp)
-        texture_indices.set(piece, 1);
+        texture_indices.set(piece, 2);
     }
 
     return {
@@ -1472,21 +1489,16 @@ export namespace PrincipalPuzzleWithTexture {
       textures,
     };
   }
-  export function makeRamified2SPuzzle<Image>(
+
+  export function makeRamified2SpPuzzle<Image>(
     radius: Geo.Distance,
     center_x: Geo.Distance,
     R: Geo.Distance,
     draw_image: (f: Complex.ComplexFunction) => Image,
     scale: number = 1,
   ): PrincipalPuzzleWithTexture<Image> {
-    const puzzle = PrincipalPuzzle.makeRamified2SPuzzle(radius, center_x, R);
-    return _makeRamified2SPuzzle(puzzle, get2STextureFunction(puzzle, scale).map(draw_image));
-  }
-
-  function _makeRamified2SpPuzzle<Image>(
-    puzzle: PrincipalPuzzle,
-    textures: Image[],
-  ): PrincipalPuzzleWithTexture<Image> {
+    const puzzle = PrincipalPuzzle.makeRamified2SpPuzzle(radius, center_x, R);
+    const textures = Textures.get2SpTextureFunction(puzzle, scale).map(draw_image);
     const unshifted_positions = new Map(puzzle.pieces.map(piece => [piece, Geo.id_trans()]));
 
     const texture_indices = new Map<Piece, number>();
@@ -1496,9 +1508,9 @@ export namespace PrincipalPuzzleWithTexture {
       texture_indices.set(edgeL.aff, 3);
       texture_indices.set(Edge.walk(edgeL, [1]).aff, 3);
       texture_indices.set(Edge.walk(edgeL, [3]).aff, 3);
-      texture_indices.set(edgeR.aff, 2);
-      texture_indices.set(Edge.walk(edgeR, [1]).aff, 2);
-      texture_indices.set(Edge.walk(edgeR, [3]).aff, 2);
+      texture_indices.set(edgeR.aff, 1);
+      texture_indices.set(Edge.walk(edgeR, [1]).aff, 1);
+      texture_indices.set(Edge.walk(edgeR, [3]).aff, 1);
       
       const prin = new Set<Piece>();
       prin.add(Puzzle.edgeAt(puzzle, 0, []).aff);
@@ -1525,7 +1537,7 @@ export namespace PrincipalPuzzleWithTexture {
       for (const piece of prin)
         texture_indices.set(piece, 0);
       for (const piece of comp)
-        texture_indices.set(piece, 1);
+        texture_indices.set(piece, 2);
     }
 
     return {
@@ -1534,16 +1546,6 @@ export namespace PrincipalPuzzleWithTexture {
       texture_indices,
       textures,
     };
-  }
-  export function makeRamified2SpPuzzle<Image>(
-    radius: Geo.Distance,
-    center_x: Geo.Distance,
-    R: Geo.Distance,
-    draw_image: (f: Complex.ComplexFunction) => Image,
-    scale: number = 1,
-  ): PrincipalPuzzleWithTexture<Image> {
-    const puzzle = PrincipalPuzzle.makeRamified2SpPuzzle(radius, center_x, R);
-    return _makeRamified2SpPuzzle(puzzle, get2SpTextureFunction(puzzle, scale).map(draw_image));
   }
 
   export function getPositions<Image>(puzzle: PrincipalPuzzleWithTexture<Image>): Map<Piece, Geo.RigidTransformation> {

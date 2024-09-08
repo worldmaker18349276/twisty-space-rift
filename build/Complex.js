@@ -1,6 +1,9 @@
 export function c(x, y = 0) {
     return [x, y];
 }
+export function omega(n) {
+    return [Math.cos(Math.PI * 2 / n), Math.sin(Math.PI * 2 / n)];
+}
 export function add(...zs) {
     const r = [0, 0];
     for (const z of zs) {
