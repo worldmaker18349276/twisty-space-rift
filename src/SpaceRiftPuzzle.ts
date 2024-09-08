@@ -359,6 +359,14 @@ export class SpaceRiftPuzzle {
     this.canvas.addEventListener("mousedown", event => {
       event.preventDefault();
       if (dragging_rift_index !== undefined) return;
+
+      if (event.button === 0 && event.ctrlKey) {
+        const piece = this.pointTo(this.getPosition(event));
+        console.log(piece);
+        this.control_state = {type: PuzzleControlStateType.Updated};
+        return;
+      }
+
       if (this.current_rifts.length === 0) return;
       if (this.current_images.size === 0) return;
 
@@ -393,13 +401,6 @@ export class SpaceRiftPuzzle {
       );
       if (dragging_rift_index === undefined && event.button === 0 && drag_rift_index !== -1) {
         dragging_rift_index = drag_rift_index;
-        return;
-      }
-
-      if (event.button === 0 && event.ctrlKey) {
-        const piece = this.pointTo(this.getPosition(event));
-        console.log(piece);
-        this.control_state = {type: PuzzleControlStateType.Updated};
         return;
       }
 
