@@ -17,9 +17,15 @@ const ROTATE_RIFT_DURATION = 300;
 const WHEEL_TO_RIFTANGLE = -0.001;
 const WHEEL_TO_RIFTOFFSET = 0.001;
 const DRAG_RIFT_RADIUS = 0.3;
+export var Variant;
+(function (Variant) {
+    Variant["_2S"] = "2s";
+    Variant["_2Sp"] = "2s'";
+})(Variant || (Variant = {}));
 export class SpaceRiftPuzzle {
     constructor(arg) {
         this.draw_frame = true;
+        this.variant = arg.variant;
         this.canvas = arg.canvas;
         this.model = arg.model;
         this.cs = arg.cs;
@@ -27,8 +33,8 @@ export class SpaceRiftPuzzle {
         this.current_images = new Set();
         this.current_rifts = [];
     }
-    // scale: for debug
-    static makeSpaceRift2S(canvas, scale = 1) {
+    static make(canvas, variant = Variant._2S) {
+        const scale = 1; // for debug
         const radius = 1.56;
         const center_x = 1;
         const cs = Draw.makeCoordinateSystem({
@@ -40,8 +46,14 @@ export class SpaceRiftPuzzle {
         const R = Math.sqrt(cs.x_range[0] * cs.x_range[0] + cs.y_range[0] * cs.y_range[0]) * 1.5 / scale;
         const image_x_range = [cs.x_range[0], cs.x_range[1]];
         const image_y_range = [cs.y_range[0], cs.y_range[1]];
-        const model = Model.PrincipalPuzzleWithTexture.makeRamified2SPuzzle(radius, center_x, R, f => Draw.drawComplex(cs, f, image_x_range, image_y_range));
-        return new SpaceRiftPuzzle({ canvas, model, cs });
+        if (variant === Variant._2S) {
+            const model = Model.PrincipalPuzzleWithTexture.makeRamified2SPuzzle(radius, center_x, R, f => Draw.drawComplex(cs, f, image_x_range, image_y_range));
+            return new SpaceRiftPuzzle({ variant, canvas, model, cs });
+        }
+        else {
+            const model = Model.PrincipalPuzzleWithTexture.makeRamified2SpPuzzle(radius, center_x, R, f => Draw.drawComplex(cs, f, image_x_range, image_y_range));
+            return new SpaceRiftPuzzle({ variant, canvas, model, cs });
+        }
     }
     init() {
         this.registerController();
@@ -222,6 +234,10 @@ export class SpaceRiftPuzzle {
             event.preventDefault();
             if (dragging_rift_index !== undefined)
                 return;
+            if (this.current_rifts.length === 0)
+                return;
+            if (this.current_images.size === 0)
+                return;
             const point = this.getPosition(event);
             const rift_index = this.current_rifts
                 .map((rift, index) => ({ dis: Math.abs(Geo.calculateNearestPoint(rift, point).dis), index }))
@@ -238,6 +254,10 @@ export class SpaceRiftPuzzle {
         this.canvas.addEventListener("mousedown", event => {
             event.preventDefault();
             if (dragging_rift_index !== undefined)
+                return;
+            if (this.current_rifts.length === 0)
+                return;
+            if (this.current_images.size === 0)
                 return;
             const point = this.getPosition(event);
             if (event.button === 1) {
@@ -276,6 +296,10 @@ export class SpaceRiftPuzzle {
         }, false);
         this.canvas.addEventListener("mousemove", event => {
             if (dragging_rift_index === undefined)
+                return;
+            if (this.current_rifts.length === 0)
+                return;
+            if (this.current_images.size === 0)
                 return;
             const point = this.getPosition(event);
             this.serTearTo(dragging_rift_index, point);
