@@ -46,8 +46,10 @@ const WHEEL_TO_RIFTOFFSET = 0.001;
 const DRAG_RIFT_RADIUS = 0.3;
 
 export enum Variant {
-  _2S = "2s",
-  _2Sp = "2s'",
+  Pole2H = "Pole(2) H",
+  Pole2V = "Pole(2) V",
+  Pole3H = "Pole(3) H",
+  Pole3V = "Pole(3) V",
 }
 
 export class SpaceRiftPuzzle {
@@ -74,8 +76,8 @@ export class SpaceRiftPuzzle {
     this.current_images = new Set();
     this.current_rifts = [];
   }
-
-  static make(canvas: HTMLCanvasElement, variant: Variant = Variant._2S): SpaceRiftPuzzle {
+  
+  static make(canvas: HTMLCanvasElement, variant: Variant = Variant.Pole2H): SpaceRiftPuzzle {
     const scale = 1; // for debug
     const radius = 1.56;
     const center_x = 1;
@@ -89,22 +91,26 @@ export class SpaceRiftPuzzle {
 
     const image_x_range: [number, number] = [cs.x_range[0], cs.x_range[1]];
     const image_y_range: [number, number] = [cs.y_range[0], cs.y_range[1]];
+    const drawComplex = (f: Complex.ComplexFunction) => Draw.drawComplex(cs, f, image_x_range, image_y_range);
 
-    if (variant === Variant._2S) {
-      const model = Model.PrincipalPuzzleWithTexture.makeRamified2SPuzzle(
-        radius, center_x, R,
-        f => Draw.drawComplex(cs, f, image_x_range, image_y_range),
-      );
-      
+    if (variant === Variant.Pole2H) {
+      const model = Model.PrincipalPuzzleWithTexture.makeRamifiedPHPuzzle(2, radius, center_x, R, drawComplex);
+      return new SpaceRiftPuzzle({variant, canvas, model, cs});
+
+    } else if (variant === Variant.Pole2V) {
+      const model = Model.PrincipalPuzzleWithTexture.makeRamifiedPVPuzzle(2, radius, center_x, R, drawComplex);
+      return new SpaceRiftPuzzle({variant, canvas, model, cs});
+
+    } else if (variant === Variant.Pole3H) {
+      const model = Model.PrincipalPuzzleWithTexture.makeRamifiedPHPuzzle(3, radius, center_x, R, drawComplex);
+      return new SpaceRiftPuzzle({variant, canvas, model, cs});
+
+    } else if (variant === Variant.Pole3V) {
+      const model = Model.PrincipalPuzzleWithTexture.makeRamifiedPVPuzzle(3, radius, center_x, R, drawComplex);
       return new SpaceRiftPuzzle({variant, canvas, model, cs});
 
     } else {
-      const model = Model.PrincipalPuzzleWithTexture.makeRamified2SpPuzzle(
-        radius, center_x, R,
-        f => Draw.drawComplex(cs, f, image_x_range, image_y_range),
-      );
-      
-      return new SpaceRiftPuzzle({variant, canvas, model, cs});
+      assert(false);
     }
   }
   init(): void {
