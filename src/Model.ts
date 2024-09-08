@@ -492,28 +492,19 @@ export namespace Puzzle {
   }
 
   // side = true: left
-  export function getCircleEdges(puzzle: Puzzle, side: boolean, sheet: number): Edge[] {
+  export function getTwistEdges(puzzle: Puzzle, side: boolean, sheet: number): Edge[] {
     const edge0 =
-      side ? edgeAt(puzzle, sheet, [0, 1, -1, -1, 0])
-      : edgeAt(puzzle, sheet, [0, 1, -1, 1, 0]);
+      side ? edgeAt(puzzle, sheet, [-1, -1, -2, -1, 0])
+      : edgeAt(puzzle, sheet, [0, 1, 2, 1, 0]);
     return unrollUntilLoopback(edge0, edge => Edge.walk(edge, [1, 1, 0]));
   }
-
-  // side = true: left
-  export function getCenterEdges(puzzle: Puzzle, side: boolean, sheet: number): Edge[] {
-    const edge0 =
-      side ? edgeAt(puzzle, sheet, [0, 1, -1, 1, 0])
-      : edgeAt(puzzle, sheet, [0, 1, -1, -1, 0]);
-    return unrollUntilLoopback(edge0, edge => Edge.walk(edge, [1, 1, 1, 0]));
-  }
-
   // side = true: left
   export function getTwistPieces(
     puzzle: Puzzle,
     side: boolean,
     sheet: number,
   ): {pieces:Set<Piece>, sheets:Set<number>} | undefined {
-    const boundaries = indices(puzzle.stands.length).map(sheet => getCircleEdges(puzzle, side, sheet));
+    const boundaries = indices(puzzle.stands.length).map(sheet => getTwistEdges(puzzle, side, sheet));
     const sheets = new Set<number>();
     const pieces = new Set<Piece>();
     for (const edge of boundaries[sheet])
@@ -545,7 +536,7 @@ export namespace Puzzle {
   // side = true: left
   function twistSnapped(puzzle: Puzzle, side: boolean, sheet: number, forward: boolean): void {
     const {sheets} = getTwistPieces(puzzle, side, sheet)!;
-    const edgess = Array.from(sheets).map(sheet => getCircleEdges(puzzle, side, sheet));
+    const edgess = Array.from(sheets).map(sheet => getTwistEdges(puzzle, side, sheet));
     const edgess_adj_rotated = edgess
       .map(edges => edges.map(edge => edge.adj))
       .map(edges_adj => forward ? rotate(edges_adj, 2) : rotate(edges_adj, -2));
@@ -606,7 +597,20 @@ export namespace Puzzle {
       { center: [+puzzle.center_x, 0], radius: puzzle.radius },
     ];
   }
-  export function getShiftTransformation(puzzle: Puzzle): {trans:Geo.RigidTransformation, side:boolean, sheets:Set<number>}[] {
+  export function getTwistTransformation(puzzle: Puzzle, side: boolean, forward: boolean): Geo.RigidTransformation {
+    const [left_circle, right_circle] = getTwistCircles(puzzle);
+    if (side && forward)
+      return Geo.rotateAround(Math.PI / 3, left_circle.center);
+    else if (side && !forward)
+      return Geo.rotateAround(-Math.PI / 3, left_circle.center);
+    else if (!side && forward)
+      return Geo.rotateAround(Math.PI / 3, right_circle.center);
+    else if (!side && !forward)
+      return Geo.rotateAround(-Math.PI / 3, right_circle.center);
+    else
+      assert(false);
+  }
+  export function getShiftTransformations(puzzle: Puzzle): {trans:Geo.RigidTransformation, side:boolean, sheets:Set<number>}[] {
     const [left_circle, right_circle] = getTwistCircles(puzzle);
     const res: {trans:Geo.RigidTransformation, side:boolean, sheets: Set<number>}[] = [];
     const visited_sheets: number[] = [];
@@ -623,19 +627,6 @@ export namespace Puzzle {
       visited_sheets.push(...sheets);
     }
     return res;
-  }
-  export function getTwistTransformation(puzzle: Puzzle, side: boolean, forward: boolean): Geo.RigidTransformation {
-    const [left_circle, right_circle] = getTwistCircles(puzzle);
-    if (side && forward)
-      return Geo.rotateAround(Math.PI / 3, left_circle.center);
-    else if (side && !forward)
-      return Geo.rotateAround(-Math.PI / 3, left_circle.center);
-    else if (!side && forward)
-      return Geo.rotateAround(Math.PI / 3, right_circle.center);
-    else if (!side && !forward)
-      return Geo.rotateAround(-Math.PI / 3, right_circle.center);
-    else
-      assert(false);
   }
 
   type Arc = {
@@ -727,7 +718,7 @@ export namespace Puzzle {
       }
     }
 
-    for (const shift_trans of getShiftTransformation(puzzle)) {
+    for (const shift_trans of getShiftTransformations(puzzle)) {
       const [sheet] = shift_trans.sheets;
       const {pieces} = getTwistPieces(puzzle, shift_trans.side, sheet)!;
       for (const piece of pieces) {
@@ -850,14 +841,13 @@ export namespace Puzzle {
     const [short_angle, long_angle] = getEdgeAngles(puzzle);
     const angle = getEdgeAngleType(edge) ? short_angle : long_angle;
 
-    const cycles = getShiftTransformation(puzzle)
-      .map(shifted_trans => {
-        const [sheet] = shifted_trans.sheets;
-        return [
-          getCircleEdges(puzzle, shifted_trans.side, sheet),
+    const cycles = getShiftTransformations(puzzle)
+      .flatMap(shifted_trans => Array.from(shifted_trans.sheets).map(sheet =>
+        [
+          getTwistEdges(puzzle, shifted_trans.side, sheet),
           sheet,
         ] as const
-      })
+      ))
       .flatMap(([cycle, sheet]) => [
         [cycle, sheet] as const,
         [cycle.map(edge => edge.adj).reverse(), sheet] as const,
@@ -1125,7 +1115,8 @@ export namespace PrincipalPuzzle {
     principal: Map<Piece, Geo.Path<Geo.CutSource<Edge, undefined>>[]>,
     complementary: Map<Piece, Geo.Path<Geo.CutSource<Edge, undefined>>[]>,
   } | undefined {
-    const EPS = 1e-3;
+    const ANG_EPS = 1e-3;
+    const POS_EPS = 1e-3;
 
     const cutted_shapes = new Map<Piece, Geo.Path<Geo.CutSource<Edge, undefined>>[]>();
 
@@ -1141,6 +1132,7 @@ export namespace PrincipalPuzzle {
         console.warn(`fail to clip path (${n}): fail to cut normal piece ${piece.name}`);
         return undefined;
       }
+      // TODO: incomplete cut
       if (res.some(path => Geo.hasIncompleteCut(path, rift_shape))) {
         console.warn(`fail to clip path (${n}): fail to cut normal piece ${piece.name}`);
         return undefined;
@@ -1161,8 +1153,14 @@ export namespace PrincipalPuzzle {
       {
         const ramified_angle_ = calculateRiftAngle(puzzle, shapes, rift_shapes, i);
         const angle_err = Math.abs(Geo.as_npi_pi(ramified_angle_ - branch_cut.cut_angle));
-        if (angle_err >= EPS)
+        if (angle_err >= ANG_EPS)
           console.warn(`ramified angle error: ${angle_err}`);
+        const pos_err = Geo.norm(Geo.sub(
+          rift_side ? Geo.getStartPoint(rift_shapes[rift_index]) : Geo.getEndPoint(rift_shapes[rift_index]),
+          branch_cut.point,
+        ));
+        if (pos_err >= POS_EPS)
+          console.warn(`ramified position error: ${pos_err}`);
       }
 
       const ramified_piece_indices: number[] = [];
@@ -1544,7 +1542,7 @@ export namespace PrincipalPuzzleWithTexture {
 
   export function getPositions<Image>(puzzle: PrincipalPuzzleWithTexture<Image>): Map<Piece, Geo.RigidTransformation> {
     const positions = new Map(puzzle.unshifted_positions);
-    for (const trans of Puzzle.getShiftTransformation(puzzle)) {
+    for (const trans of Puzzle.getShiftTransformations(puzzle)) {
       const [sheet] = trans.sheets;
       for (const piece of Puzzle.getTwistPieces(puzzle, trans.side, sheet)!.pieces)
         positions.set(piece, Geo.compose(positions.get(piece)!, trans.trans));

@@ -275,6 +275,12 @@ export class SpaceRiftPuzzle {
                 dragging_rift_index = drag_rift_index;
                 return;
             }
+            if (event.button === 0 && event.ctrlKey) {
+                const piece = this.pointTo(this.getPosition(event));
+                console.log(piece);
+                this.control_state = { type: PuzzleControlStateType.Updated };
+                return;
+            }
             if (event.button === 0 || event.button === 2) {
                 const [left_circle, right_circle] = Model.Puzzle.getTwistCircles(this.model);
                 const left_dis = Geo.norm(Geo.sub(left_circle.center, point));
