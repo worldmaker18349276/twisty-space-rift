@@ -60,7 +60,7 @@ export type State =
   | { type: StateType.LeftShifted, angle: Geo.Angle }
   | { type: StateType.RightShifted, angle: Geo.Angle };
 
-export enum PuzzleType { Normal, Ramified_PH, Ramified_PV }
+export enum PuzzleType { Normal, Ramified_DH, Ramified_DV }
 
 export type Puzzle = {
   type: PuzzleType;
@@ -428,11 +428,11 @@ export namespace Puzzle {
       R,
     };
   }
-  export function makeRamifiedPHPuzzle(turn: number, radius: Geo.Distance, center_x: Geo.Distance, R: Geo.Distance): Puzzle {
+  export function makeRamifiedDHPuzzle(turn: number, radius: Geo.Distance, center_x: Geo.Distance, R: Geo.Distance): Puzzle {
     ckeckPuzzleShape(radius, center_x, R);
     const {pieces, stands, ramified} = makeRamifiedPHPieces(turn);
     return {
-      type: PuzzleType.Ramified_PH,
+      type: PuzzleType.Ramified_DH,
       pieces,
       stands,
       ramified,
@@ -442,11 +442,11 @@ export namespace Puzzle {
       R,
     };
   }
-  export function makeRamifiedPVpPuzzle(turn: number, radius: Geo.Distance, center_x: Geo.Distance, R: Geo.Distance): Puzzle {
+  export function makeRamifiedDVPuzzle(turn: number, radius: Geo.Distance, center_x: Geo.Distance, R: Geo.Distance): Puzzle {
     ckeckPuzzleShape(radius, center_x, R);
     const {pieces, stands, ramified} = makeRamifiednPVPieces(turn);
     return {
-      type: PuzzleType.Ramified_PH,
+      type: PuzzleType.Ramified_DH,
       pieces,
       stands,
       ramified,
@@ -946,8 +946,8 @@ export type PrincipalPuzzle = Puzzle & {
 export namespace PrincipalPuzzle {
   const MAX_RIFT_OFFSET = 0.8;
 
-  export function makeRamifiedPHPuzzle(turn: number, radius: Geo.Distance, center_x: Geo.Distance, R: Geo.Distance): PrincipalPuzzle {
-    const puzzle = Puzzle.makeRamifiedPHPuzzle(turn, radius, center_x, R);
+  export function makeRamifiedDHPuzzle(turn: number, radius: Geo.Distance, center_x: Geo.Distance, R: Geo.Distance): PrincipalPuzzle {
+    const puzzle = Puzzle.makeRamifiedDHPuzzle(turn, radius, center_x, R);
 
     return {
       ...puzzle,
@@ -960,8 +960,8 @@ export namespace PrincipalPuzzle {
       ],
     };
   }
-  export function makeRamifiedPVPuzzle(turn: number, radius: Geo.Distance, center_x: Geo.Distance, R: Geo.Distance): PrincipalPuzzle {
-    const puzzle = Puzzle.makeRamifiedPVpPuzzle(turn, radius, center_x, R);
+  export function makeRamifiedDVPuzzle(turn: number, radius: Geo.Distance, center_x: Geo.Distance, R: Geo.Distance): PrincipalPuzzle {
+    const puzzle = Puzzle.makeRamifiedDVPuzzle(turn, radius, center_x, R);
 
     return {
       ...puzzle,
@@ -1380,7 +1380,7 @@ export type PrincipalPuzzleWithTexture<Image> = PrincipalPuzzle & {
 };
 
 export namespace PrincipalPuzzleWithTexture {
-  export function makeRamifiedPHPuzzle<Image>(
+  export function makeRamifiedDHPuzzle<Image>(
     turn: number,
     radius: Geo.Distance,
     center_x: Geo.Distance,
@@ -1388,7 +1388,7 @@ export namespace PrincipalPuzzleWithTexture {
     draw_image: (f: Complex.ComplexFunction) => Image,
     scale: number = 1,
   ): PrincipalPuzzleWithTexture<Image> {
-    const puzzle = PrincipalPuzzle.makeRamifiedPHPuzzle(turn, radius, center_x, R);
+    const puzzle = PrincipalPuzzle.makeRamifiedDHPuzzle(turn, radius, center_x, R);
     const textures = Textures.getP1TextureFunction(puzzle, turn, scale).map(draw_image);
     const unshifted_positions = new Map(puzzle.pieces.map(piece => [piece, Geo.id_trans()]));
 
@@ -1424,7 +1424,7 @@ export namespace PrincipalPuzzleWithTexture {
     };
   }
 
-  export function makeRamifiedPVPuzzle<Image>(
+  export function makeRamifiedDVPuzzle<Image>(
     turn: number,
     radius: Geo.Distance,
     center_x: Geo.Distance,
@@ -1432,7 +1432,7 @@ export namespace PrincipalPuzzleWithTexture {
     draw_image: (f: Complex.ComplexFunction) => Image,
     scale: number = 1,
   ): PrincipalPuzzleWithTexture<Image> {
-    const puzzle = PrincipalPuzzle.makeRamifiedPVPuzzle(turn, radius, center_x, R);
+    const puzzle = PrincipalPuzzle.makeRamifiedDVPuzzle(turn, radius, center_x, R);
     const textures = Textures.getP2TextureFunction(puzzle, turn, scale).map(draw_image);
     const unshifted_positions = new Map(puzzle.pieces.map(piece => [piece, Geo.id_trans()]));
 

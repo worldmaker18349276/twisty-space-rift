@@ -57,8 +57,8 @@ export var StateType;
 export var PuzzleType;
 (function (PuzzleType) {
     PuzzleType[PuzzleType["Normal"] = 0] = "Normal";
-    PuzzleType[PuzzleType["Ramified_PH"] = 1] = "Ramified_PH";
-    PuzzleType[PuzzleType["Ramified_PV"] = 2] = "Ramified_PV";
+    PuzzleType[PuzzleType["Ramified_DH"] = 1] = "Ramified_DH";
+    PuzzleType[PuzzleType["Ramified_DV"] = 2] = "Ramified_DV";
 })(PuzzleType || (PuzzleType = {}));
 export var Puzzle;
 (function (Puzzle) {
@@ -355,11 +355,11 @@ export var Puzzle;
         };
     }
     Puzzle.makeNormalPuzzle = makeNormalPuzzle;
-    function makeRamifiedPHPuzzle(turn, radius, center_x, R) {
+    function makeRamifiedDHPuzzle(turn, radius, center_x, R) {
         ckeckPuzzleShape(radius, center_x, R);
         const { pieces, stands, ramified } = makeRamifiedPHPieces(turn);
         return {
-            type: PuzzleType.Ramified_PH,
+            type: PuzzleType.Ramified_DH,
             pieces,
             stands,
             ramified,
@@ -369,12 +369,12 @@ export var Puzzle;
             R,
         };
     }
-    Puzzle.makeRamifiedPHPuzzle = makeRamifiedPHPuzzle;
-    function makeRamifiedPVpPuzzle(turn, radius, center_x, R) {
+    Puzzle.makeRamifiedDHPuzzle = makeRamifiedDHPuzzle;
+    function makeRamifiedDVPuzzle(turn, radius, center_x, R) {
         ckeckPuzzleShape(radius, center_x, R);
         const { pieces, stands, ramified } = makeRamifiednPVPieces(turn);
         return {
-            type: PuzzleType.Ramified_PH,
+            type: PuzzleType.Ramified_DH,
             pieces,
             stands,
             ramified,
@@ -384,7 +384,7 @@ export var Puzzle;
             R,
         };
     }
-    Puzzle.makeRamifiedPVpPuzzle = makeRamifiedPVpPuzzle;
+    Puzzle.makeRamifiedDVPuzzle = makeRamifiedDVPuzzle;
     // side = true: left
     function getTwistEdges(puzzle, side, sheet) {
         const edge0 = side ? edgeAt(puzzle, sheet, [-1, -1, -2, -1, 0])
@@ -803,8 +803,8 @@ export var HyperbolicPolarCoordinate;
 export var PrincipalPuzzle;
 (function (PrincipalPuzzle) {
     const MAX_RIFT_OFFSET = 0.8;
-    function makeRamifiedPHPuzzle(turn, radius, center_x, R) {
-        const puzzle = Puzzle.makeRamifiedPHPuzzle(turn, radius, center_x, R);
+    function makeRamifiedDHPuzzle(turn, radius, center_x, R) {
+        const puzzle = Puzzle.makeRamifiedDHPuzzle(turn, radius, center_x, R);
         return {
             ...puzzle,
             branch_cuts: [
@@ -816,9 +816,9 @@ export var PrincipalPuzzle;
             ],
         };
     }
-    PrincipalPuzzle.makeRamifiedPHPuzzle = makeRamifiedPHPuzzle;
-    function makeRamifiedPVPuzzle(turn, radius, center_x, R) {
-        const puzzle = Puzzle.makeRamifiedPVpPuzzle(turn, radius, center_x, R);
+    PrincipalPuzzle.makeRamifiedDHPuzzle = makeRamifiedDHPuzzle;
+    function makeRamifiedDVPuzzle(turn, radius, center_x, R) {
+        const puzzle = Puzzle.makeRamifiedDVPuzzle(turn, radius, center_x, R);
         return {
             ...puzzle,
             branch_cuts: [
@@ -830,7 +830,7 @@ export var PrincipalPuzzle;
             ],
         };
     }
-    PrincipalPuzzle.makeRamifiedPVPuzzle = makeRamifiedPVPuzzle;
+    PrincipalPuzzle.makeRamifiedDVPuzzle = makeRamifiedDVPuzzle;
     function calculateRiftShape(puzzle, shapes, rift) {
         const left_point = Geo.getStartPoint(shapes.get(puzzle.ramified[rift.left].pieces[0]));
         const right_point = Geo.getStartPoint(shapes.get(puzzle.ramified[rift.right].pieces[0]));
@@ -1134,8 +1134,8 @@ var Textures;
 })(Textures || (Textures = {}));
 export var PrincipalPuzzleWithTexture;
 (function (PrincipalPuzzleWithTexture) {
-    function makeRamifiedPHPuzzle(turn, radius, center_x, R, draw_image, scale = 1) {
-        const puzzle = PrincipalPuzzle.makeRamifiedPHPuzzle(turn, radius, center_x, R);
+    function makeRamifiedDHPuzzle(turn, radius, center_x, R, draw_image, scale = 1) {
+        const puzzle = PrincipalPuzzle.makeRamifiedDHPuzzle(turn, radius, center_x, R);
         const textures = Textures.getP1TextureFunction(puzzle, turn, scale).map(draw_image);
         const unshifted_positions = new Map(puzzle.pieces.map(piece => [piece, Geo.id_trans()]));
         const texture_indices = new Map();
@@ -1168,9 +1168,9 @@ export var PrincipalPuzzleWithTexture;
             textures,
         };
     }
-    PrincipalPuzzleWithTexture.makeRamifiedPHPuzzle = makeRamifiedPHPuzzle;
-    function makeRamifiedPVPuzzle(turn, radius, center_x, R, draw_image, scale = 1) {
-        const puzzle = PrincipalPuzzle.makeRamifiedPVPuzzle(turn, radius, center_x, R);
+    PrincipalPuzzleWithTexture.makeRamifiedDHPuzzle = makeRamifiedDHPuzzle;
+    function makeRamifiedDVPuzzle(turn, radius, center_x, R, draw_image, scale = 1) {
+        const puzzle = PrincipalPuzzle.makeRamifiedDVPuzzle(turn, radius, center_x, R);
         const textures = Textures.getP2TextureFunction(puzzle, turn, scale).map(draw_image);
         const unshifted_positions = new Map(puzzle.pieces.map(piece => [piece, Geo.id_trans()]));
         const texture_indices = new Map();
@@ -1203,7 +1203,7 @@ export var PrincipalPuzzleWithTexture;
             textures,
         };
     }
-    PrincipalPuzzleWithTexture.makeRamifiedPVPuzzle = makeRamifiedPVPuzzle;
+    PrincipalPuzzleWithTexture.makeRamifiedDVPuzzle = makeRamifiedDVPuzzle;
     function getPositions(puzzle) {
         const positions = new Map(puzzle.unshifted_positions);
         for (const trans of Puzzle.getShiftTransformations(puzzle)) {
