@@ -13,19 +13,36 @@ export function add(...zs) {
     return r;
 }
 export function mul(...zs) {
-    const r = [1, 0];
+    let r = [1, 0];
     for (const z of zs) {
-        [r[0], r[1]] = [r[0] * z[0] - r[1] * z[1], r[0] * z[1] + r[1] * z[0]];
+        r = [r[0] * z[0] - r[1] * z[1], r[0] * z[1] + r[1] * z[0]];
     }
     return r;
 }
 export function pow(z, pow) {
     const [r, phi] = toRPhi(z[0], z[1]);
-    const [r_, phi_] = [r ** pow, phi * pow];
+    const [r_, phi_] = [Math.pow(r, pow), phi * pow];
     return toXY(r_, phi_);
 }
 export function conjugate(z) {
     return [z[0], -z[1]];
+}
+export function abs(z) {
+    return [Math.sqrt(z[0] * z[0] + z[1] * z[1]), 0];
+}
+export function normalize(z) {
+    const [r, phi] = toRPhi(z[0], z[1]);
+    return toXY(1, phi);
+}
+export function discretize_(z, R = 1) {
+    const [r, phi] = toRPhi(z[0], z[1]);
+    const r_ = Math.round(r / R) * R;
+    return toXY(r_, phi);
+}
+export function discretize(z, n = 12) {
+    const [r, phi] = toRPhi(z[0], z[1]);
+    const phi_ = Math.round(phi / (Math.PI * 2 / n)) * (Math.PI * 2 / n);
+    return toXY(r, phi_);
 }
 export function toRPhi(x, y) {
     return [Math.sqrt(x * x + y * y), Math.atan2(y, x)];

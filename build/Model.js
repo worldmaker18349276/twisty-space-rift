@@ -287,7 +287,7 @@ export var Puzzle;
             stands: [pieceBR.edges[0]],
         };
     }
-    function makeRamifiedPHPieces(n) {
+    function makeRamifiedDHPieces(n) {
         const layers = indices(n).map(i => makePieces(`_${i}`));
         const piece50Ls = layers.map(layer => Edge.walk(layer.stands[0], [0, 1, -1, 1, 0]).aff);
         const pieceCLs = layers.map(layer => Edge.walk(layer.stands[0], [0, 1, -1, 1]).aff);
@@ -310,7 +310,7 @@ export var Puzzle;
             ramified: [{ pieces: ramified_pieceCLs, turn: n }, { pieces: ramified_pieceCRs, turn: n }],
         };
     }
-    function makeRamifiednPVPieces(n) {
+    function makeRamifiednDVPieces(n) {
         const layers = indices(n).map(i => makePieces(`_${i}`));
         const piece50Ls = layers.map(layer => Edge.walk(layer.stands[0], [0, 1, -1, 1, 0]).aff);
         const piece0Ls = layers.map(layer => Edge.walk(layer.stands[0], [0, 1]).aff);
@@ -357,7 +357,7 @@ export var Puzzle;
     Puzzle.makeNormalPuzzle = makeNormalPuzzle;
     function makeRamifiedDHPuzzle(turn, radius, center_x, R) {
         ckeckPuzzleShape(radius, center_x, R);
-        const { pieces, stands, ramified } = makeRamifiedPHPieces(turn);
+        const { pieces, stands, ramified } = makeRamifiedDHPieces(turn);
         return {
             type: PuzzleType.Ramified_DH,
             pieces,
@@ -372,7 +372,7 @@ export var Puzzle;
     Puzzle.makeRamifiedDHPuzzle = makeRamifiedDHPuzzle;
     function makeRamifiedDVPuzzle(turn, radius, center_x, R) {
         ckeckPuzzleShape(radius, center_x, R);
-        const { pieces, stands, ramified } = makeRamifiednPVPieces(turn);
+        const { pieces, stands, ramified } = makeRamifiednDVPieces(turn);
         return {
             type: PuzzleType.Ramified_DH,
             pieces,
@@ -1111,7 +1111,7 @@ export var PrincipalPuzzle;
 })(PrincipalPuzzle || (PrincipalPuzzle = {}));
 var Textures;
 (function (Textures) {
-    function getP1TextureFunction(puzzle, turn, scale) {
+    function getDHTextureFunction(puzzle, turn, scale) {
         const d = puzzle.center_x;
         const fns = [];
         for (const i of indices(turn)) {
@@ -1120,8 +1120,8 @@ var Textures;
         }
         return fns;
     }
-    Textures.getP1TextureFunction = getP1TextureFunction;
-    function getP2TextureFunction(puzzle, turn, scale) {
+    Textures.getDHTextureFunction = getDHTextureFunction;
+    function getDVTextureFunction(puzzle, turn, scale) {
         const d = puzzle.center_x / Math.sqrt(3);
         const fns = [];
         for (const i of indices(turn)) {
@@ -1130,13 +1130,37 @@ var Textures;
         }
         return fns;
     }
-    Textures.getP2TextureFunction = getP2TextureFunction;
+    Textures.getDVTextureFunction = getDVTextureFunction;
+    function getQTextureFunction(puzzle, scale) {
+        const d1 = puzzle.center_x;
+        const d2 = puzzle.center_x / Math.sqrt(3);
+        const fns = [];
+        for (const i of indices(2)) {
+            fns.push((z) => Complex.mul(Complex.conjugate(Complex.pow(Complex.add(z, Complex.c(+d1, 0)), 1 / 2)), Complex.pow(Complex.add(z, Complex.c(-d1, 0)), 1 / 2), Complex.pow(Complex.add(Complex.mul(z, Complex.c(0, +1)), Complex.c(+d2, 0)), 1 / 2), Complex.pow(Complex.add(Complex.mul(z, Complex.c(0, +1)), Complex.c(-d2, 0)), 1 / 2), Complex.omega(i / 2), Complex.c(scale, 0)));
+            fns.push((z) => Complex.mul(Complex.conjugate(Complex.pow(Complex.add(z, Complex.c(+d1, 0)), 1 / 2)), Complex.pow(Complex.mul(Complex.add(z, Complex.c(-1, 0)), Complex.c(-d1, 0)), 1 / 2), Complex.pow(Complex.add(Complex.mul(z, Complex.c(0, +1)), Complex.c(+d2, 0)), 1 / 2), Complex.pow(Complex.mul(Complex.c(-1, 0), Complex.add(Complex.mul(z, Complex.c(0, +1)), Complex.c(-d2, 0))), 1 / 2), Complex.omega((i + 1) / 2), Complex.c(scale, 0)));
+        }
+        return fns;
+    }
+    Textures.getQTextureFunction = getQTextureFunction;
+    function getDDTextureFunction(puzzle, scale) {
+        const d1 = puzzle.center_x;
+        const d2 = puzzle.center_x / Math.sqrt(3);
+        const f1 = (z) => Complex.mul(Complex.pow(Complex.add(z, Complex.c(+d1, 0)), 1 / 2), Complex.pow(Complex.add(z, Complex.c(-d1, 0)), 1 / 2), Complex.pow(Complex.add(Complex.mul(z, Complex.c(0, +1)), Complex.c(+d2, 0)), 1 / 2), Complex.pow(Complex.add(Complex.mul(z, Complex.c(0, -1)), Complex.c(+d2, 0)), 1 / 2), Complex.c(scale, 0));
+        const f2 = (z) => Complex.mul(Complex.pow(Complex.add(z, Complex.c(+d1, 0)), 1 / 2), Complex.pow(Complex.add(z, Complex.c(-d1, 0)), 1 / 2), Complex.abs(Complex.add(z, Complex.c(0, (z[1] >= 0 ? +1 : -1) * d2))), Complex.c(-1, 0), Complex.c(scale, 0));
+        const f3 = (z) => Complex.mul(Complex.abs(Complex.add(z, Complex.c((z[0] >= 0 ? +1 : -1) * d1, 0))), Complex.pow(Complex.add(Complex.mul(z, Complex.c(0, +1)), Complex.c(+d2, 0)), 1 / 2), Complex.pow(Complex.add(Complex.mul(z, Complex.c(0, -1)), Complex.c(+d2, 0)), 1 / 2), Complex.normalize(z), Complex.c(-1, 0), Complex.c(scale, 0));
+        const f12 = (z) => (z[1] < 0) ? f1(z) : f2(z);
+        const f12_ = (z) => !(z[1] < 0) ? f1(z) : f2(z);
+        const f13 = (z) => (z[1] > 0 ? z[0] < 0 : z[0] <= 0) ? f1(z) : f3(z);
+        const f13_ = (z) => !(z[1] > 0 ? z[0] < 0 : z[0] <= 0) ? f1(z) : f3(z);
+        return [f1, f2, f3, f12, f12_, f13, f13_];
+    }
+    Textures.getDDTextureFunction = getDDTextureFunction;
 })(Textures || (Textures = {}));
 export var PrincipalPuzzleWithTexture;
 (function (PrincipalPuzzleWithTexture) {
     function makeRamifiedDHPuzzle(turn, radius, center_x, R, draw_image, scale = 1) {
         const puzzle = PrincipalPuzzle.makeRamifiedDHPuzzle(turn, radius, center_x, R);
-        const textures = Textures.getP1TextureFunction(puzzle, turn, scale).map(draw_image);
+        const textures = Textures.getDHTextureFunction(puzzle, turn, scale).map(draw_image);
         const unshifted_positions = new Map(puzzle.pieces.map(piece => [piece, Geo.id_trans()]));
         const texture_indices = new Map();
         for (const sheet of indices(puzzle.stands.length)) {
@@ -1171,7 +1195,7 @@ export var PrincipalPuzzleWithTexture;
     PrincipalPuzzleWithTexture.makeRamifiedDHPuzzle = makeRamifiedDHPuzzle;
     function makeRamifiedDVPuzzle(turn, radius, center_x, R, draw_image, scale = 1) {
         const puzzle = PrincipalPuzzle.makeRamifiedDVPuzzle(turn, radius, center_x, R);
-        const textures = Textures.getP2TextureFunction(puzzle, turn, scale).map(draw_image);
+        const textures = Textures.getDVTextureFunction(puzzle, turn, scale).map(draw_image);
         const unshifted_positions = new Map(puzzle.pieces.map(piece => [piece, Geo.id_trans()]));
         const texture_indices = new Map();
         for (const sheet of indices(puzzle.stands.length)) {
