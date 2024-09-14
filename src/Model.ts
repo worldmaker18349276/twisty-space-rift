@@ -917,23 +917,40 @@ export namespace HyperbolicPolarCoordinate {
       return Geo.as_0_2pi(angle) + n * Math.PI*2;
     }
   }
+  function computeLeftAngle(offset: number, right_angle: Geo.Angle): Geo.Angle {
+    const s = Math.sin(right_angle);
+    const c = Math.cos(right_angle);
+    const left_angle = Math.atan2(s, offset + c) - Math.atan2(offset*s, offset*c + 1);
+    return makeSameTurn(left_angle, right_angle);
+  }
   export function getFocusAngles(coord: HyperbolicPolarCoordinate): [left_angle:Geo.Angle, right_angle:Geo.Angle] {
-    const f1: Geo.Point = [-1, 0];
-    const f2: Geo.Point = [+1, 0];
-    const [middle, is_solid] = getHyperbolaPoint(f1, f2, coord);
-
     if (coord.offset < 0) {
-      const right_angle = -(Geo.angleBetween(f2, f1, middle) + (is_solid ? 0 : Math.PI));
-      return [coord.angle, makeSameTurn(right_angle, coord.angle)];
+      return [coord.angle, computeLeftAngle(-coord.offset, coord.angle)];
     } else {
-      const left_angle = Geo.angleBetween(f1, f2, middle) + (is_solid ? 0 : Math.PI);
-      return [makeSameTurn(left_angle, coord.angle), coord.angle];
+      return [computeLeftAngle(coord.offset, coord.angle), coord.angle];
     }
   }
   export function getCoordinateFromAngles(left_angle: Geo.Angle, right_angle: Geo.Angle): HyperbolicPolarCoordinate {
     const offset = (Math.sin(right_angle) - Math.sin(left_angle)) / Math.sin(left_angle + right_angle);
     const angle = offset > 0 ? right_angle : left_angle;
     return {offset, angle};
+  }
+  export function offsetTo(coord: HyperbolicPolarCoordinate, offset: number): HyperbolicPolarCoordinate {
+    const [left_angle, right_angle] = getFocusAngles(coord);
+    if (coord.offset > offset) {
+      if (offset < 0) {
+        return {offset, angle:computeLeftAngle(offset, right_angle)};
+      } else {
+        return {offset, angle:right_angle};
+      }
+
+    } else {
+      if (offset < 0) {
+        return {offset, angle:left_angle};
+      } else {
+        return {offset, angle:computeLeftAngle(-offset, left_angle)};
+      }
+    }
   }
 }
 

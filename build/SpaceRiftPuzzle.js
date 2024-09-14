@@ -243,7 +243,7 @@ export class SpaceRiftPuzzle {
         const angle_ = Geo.as_npi_pi(angle - angle0) + angle0;
         return this.tear(index, angle_, offset, duration);
     }
-    serTearTo(index, point) {
+    tearToImmediately(index, point) {
         if (this.control_state.type !== PuzzleControlStateType.Ready)
             return false;
         const p1 = this.model.branch_cuts[this.model.rifts[index].left].point;
@@ -337,7 +337,7 @@ export class SpaceRiftPuzzle {
             if (this.current_images.size === 0)
                 return;
             const point = this.getPosition(event);
-            this.serTearTo(dragging_rift_index, point);
+            this.tearToImmediately(dragging_rift_index, point);
         }, false);
         this.canvas.addEventListener("mouseup", event => { dragging_rift_index = undefined; }, false);
         this.canvas.addEventListener("mouseleave", event => { dragging_rift_index = undefined; }, false);
