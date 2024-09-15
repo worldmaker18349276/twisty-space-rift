@@ -889,7 +889,7 @@ export var PrincipalPuzzle;
         const prin_shapes = [];
         for (const i of indices(puzzle.ramified.length)) {
             const ramified = puzzle.ramified[i];
-            const branch_cut = puzzle.branch_cuts[i];
+            const branch_cut = puzzle.branch_points[i];
             const rift_index = puzzle.rifts.findIndex(({ left, right }) => left === i || right === i);
             const rift_side = puzzle.rifts[rift_index].left === i;
             const rift_shape = rift_shapes[rift_index];
@@ -945,7 +945,8 @@ export var PrincipalPuzzle;
                     res = ress.flatMap(subshapes => subshapes).map(subshape => Geo.flattenCut(subshape));
                 }
                 append(cutted_shapes, piece, res);
-                if (branch_cut.principal !== undefined && index === ramified_piece_indices[branch_cut.principal]) {
+                const ramified_piece_index = zip(ramified_piece_indices, branch_cut.order).find(([, ord]) => ord === 0)[0];
+                if (index === ramified_piece_index) {
                     const prin_shape0 = rift_side ?
                         res.find(path => path.segs.some(seg => seg.source.type === Geo.CutSourceType.LeftCut
                             && seg.source.ref === rift_shape.segs[0]
@@ -1030,19 +1031,19 @@ export var PrincipalPuzzle;
             console.warn(`twist angle changes too much: ${twist_angle_diff}`);
         const is_moved = puzzle.ramified
             .map(ramified => ramified.pieces.some(piece => pieces.has(piece)));
-        const moved_points = puzzle.branch_cuts
+        const moved_points = puzzle.branch_points
             .map(({ point }, index) => is_moved[index] ? Geo.transformPoint(point, shift_trans) : point);
         const lean_angle_diffs = puzzle.rifts
-            .map(rift => Geo.angleBetween([0, 0], Geo.sub(puzzle.branch_cuts[rift.right].point, puzzle.branch_cuts[rift.left].point), Geo.sub(moved_points[rift.right], moved_points[rift.left])));
-        const cut_angle_diffs = indices(puzzle.branch_cuts.length)
+            .map(rift => Geo.angleBetween([0, 0], Geo.sub(puzzle.branch_points[rift.right].point, puzzle.branch_points[rift.left].point), Geo.sub(moved_points[rift.right], moved_points[rift.left])));
+        const cut_angle_diffs = indices(puzzle.branch_points.length)
             .map(i => puzzle.rifts.findIndex(({ left, right }) => left === i || right === i))
             .map(rift_index => rift_index === -1 ? 0 : lean_angle_diffs[rift_index])
             .map((lean_angle_diff, i) => lean_angle_diff - (is_moved[i] ? twist_angle_diff : 0));
         // TODO: cross branch point
         // TODO: fail for invalid rift crossing
-        for (const i of indices(puzzle.branch_cuts.length)) {
-            puzzle.branch_cuts[i].cut_angle += cut_angle_diffs[i];
-            puzzle.branch_cuts[i].point = moved_points[i];
+        for (const i of indices(puzzle.branch_points.length)) {
+            puzzle.branch_points[i].cut_angle += cut_angle_diffs[i];
+            puzzle.branch_points[i].point = moved_points[i];
         }
         Puzzle.setShift(puzzle, side, sheets, angle);
         return true;
@@ -1066,8 +1067,8 @@ export var PrincipalPuzzle;
         // TODO: cross branch point
         // TODO: fail for invalid rift crossing
         puzzle.rifts[index].coord = { offset: offset_, angle };
-        puzzle.branch_cuts[puzzle.rifts[index].left].cut_angle += left_angle_diff;
-        puzzle.branch_cuts[puzzle.rifts[index].right].cut_angle += right_angle_diff;
+        puzzle.branch_points[puzzle.rifts[index].left].cut_angle += left_angle_diff;
+        puzzle.branch_points[puzzle.rifts[index].right].cut_angle += right_angle_diff;
         return true;
     }
     PrincipalPuzzle.setRift = setRift;
@@ -1219,9 +1220,9 @@ export var Factory;
             },
             make_rifts: (radius, center_x, R) => {
                 return {
-                    branch_cuts: [
-                        { point: [-center_x, 0], cut_angle: Math.PI / 6, principal: 0 },
-                        { point: [center_x, 0], cut_angle: Math.PI / 6, principal: 0 },
+                    branch_points: [
+                        { point: [-center_x, 0], cut_angle: Math.PI / 6, order: indices(turn) },
+                        { point: [center_x, 0], cut_angle: Math.PI / 6, order: rotate(indices(turn), 1).reverse() },
                     ],
                     rifts: [
                         { left: 0, right: 1, coord: { offset: 0.0, angle: 0.0 } }
@@ -1285,9 +1286,9 @@ export var Factory;
             },
             make_rifts: (radius, center_x, R) => {
                 return {
-                    branch_cuts: [
-                        { point: [0, center_x / Math.sqrt(3)], cut_angle: Math.PI / 3, principal: 0 },
-                        { point: [0, -center_x / Math.sqrt(3)], cut_angle: Math.PI / 3, principal: 0 },
+                    branch_points: [
+                        { point: [0, center_x / Math.sqrt(3)], cut_angle: Math.PI / 3, order: indices(turn) },
+                        { point: [0, -center_x / Math.sqrt(3)], cut_angle: Math.PI / 3, order: rotate(indices(turn), 1).reverse() },
                     ],
                     rifts: [
                         { left: 0, right: 1, coord: { offset: 0.0, angle: 0.0 } }
@@ -1368,11 +1369,11 @@ export var Factory;
             },
             make_rifts: (radius, center_x, R) => {
                 return {
-                    branch_cuts: [
-                        { point: [-center_x, 0], cut_angle: Math.PI / 6, principal: 0 },
-                        { point: [center_x, 0], cut_angle: Math.PI / 6, principal: 0 },
-                        { point: [0, center_x / Math.sqrt(3)], cut_angle: Math.PI / 3, principal: 0 },
-                        { point: [0, -center_x / Math.sqrt(3)], cut_angle: Math.PI / 3, principal: 0 },
+                    branch_points: [
+                        { point: [-center_x, 0], cut_angle: Math.PI / 6, order: indices(turn) },
+                        { point: [center_x, 0], cut_angle: Math.PI / 6, order: rotate(indices(turn), 1).reverse() },
+                        { point: [0, center_x / Math.sqrt(3)], cut_angle: Math.PI / 3, order: indices(turn) },
+                        { point: [0, -center_x / Math.sqrt(3)], cut_angle: Math.PI / 3, order: rotate(indices(turn), 1).reverse() },
                     ],
                     rifts: [
                         { left: 0, right: 1, coord: { offset: 0.0, angle: 0.0 } },

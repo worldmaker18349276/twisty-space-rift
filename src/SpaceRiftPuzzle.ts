@@ -317,8 +317,8 @@ export class SpaceRiftPuzzle {
     return true;
   }
   tearTo(index: number, point: Geo.Point, duration?: number): boolean {
-    const p1 = this.model.branch_cuts[this.model.rifts[index].left].point;
-    const p2 = this.model.branch_cuts[this.model.rifts[index].right].point;
+    const p1 = this.model.branch_points[this.model.rifts[index].left].point;
+    const p2 = this.model.branch_points[this.model.rifts[index].right].point;
     const angle0 = this.model.rifts[index].coord.angle;
     const {offset, angle} = Model.HyperbolicPolarCoordinate.getCoordinateFromPoint(p1, p2, point);
     const angle_ = Geo.as_npi_pi(angle - angle0) + angle0;
@@ -326,8 +326,8 @@ export class SpaceRiftPuzzle {
   }
   tearToImmediately(index: number, point: Geo.Point): boolean {
     if (this.control_state.type !== PuzzleControlStateType.Ready) return false;
-    const p1 = this.model.branch_cuts[this.model.rifts[index].left].point;
-    const p2 = this.model.branch_cuts[this.model.rifts[index].right].point;
+    const p1 = this.model.branch_points[this.model.rifts[index].left].point;
+    const p2 = this.model.branch_points[this.model.rifts[index].right].point;
     const angle0 = this.model.rifts[index].coord.angle;
     const {offset, angle} = Model.HyperbolicPolarCoordinate.getCoordinateFromPoint(p1, p2, point);
     const angle_ = Geo.as_npi_pi(angle - angle0) + angle0;
@@ -343,8 +343,8 @@ export class SpaceRiftPuzzle {
     const start_dragging_rift = (point: Geo.Point) => {
       const rift_points = this.model.rifts.map(rift => 
         Model.HyperbolicPolarCoordinate.getHyperbolaPoint(
-          this.model.branch_cuts[rift.left].point,
-          this.model.branch_cuts[rift.right].point,
+          this.model.branch_points[rift.left].point,
+          this.model.branch_points[rift.right].point,
           rift.coord,
         )
       );

@@ -242,8 +242,8 @@ export class SpaceRiftPuzzle {
         return true;
     }
     tearTo(index, point, duration) {
-        const p1 = this.model.branch_cuts[this.model.rifts[index].left].point;
-        const p2 = this.model.branch_cuts[this.model.rifts[index].right].point;
+        const p1 = this.model.branch_points[this.model.rifts[index].left].point;
+        const p2 = this.model.branch_points[this.model.rifts[index].right].point;
         const angle0 = this.model.rifts[index].coord.angle;
         const { offset, angle } = Model.HyperbolicPolarCoordinate.getCoordinateFromPoint(p1, p2, point);
         const angle_ = Geo.as_npi_pi(angle - angle0) + angle0;
@@ -252,8 +252,8 @@ export class SpaceRiftPuzzle {
     tearToImmediately(index, point) {
         if (this.control_state.type !== PuzzleControlStateType.Ready)
             return false;
-        const p1 = this.model.branch_cuts[this.model.rifts[index].left].point;
-        const p2 = this.model.branch_cuts[this.model.rifts[index].right].point;
+        const p1 = this.model.branch_points[this.model.rifts[index].left].point;
+        const p2 = this.model.branch_points[this.model.rifts[index].right].point;
         const angle0 = this.model.rifts[index].coord.angle;
         const { offset, angle } = Model.HyperbolicPolarCoordinate.getCoordinateFromPoint(p1, p2, point);
         const angle_ = Geo.as_npi_pi(angle - angle0) + angle0;
@@ -267,7 +267,7 @@ export class SpaceRiftPuzzle {
         let dragging_rift_index = undefined;
         const is_dragging_rift = () => dragging_rift_index !== undefined;
         const start_dragging_rift = (point) => {
-            const rift_points = this.model.rifts.map(rift => Model.HyperbolicPolarCoordinate.getHyperbolaPoint(this.model.branch_cuts[rift.left].point, this.model.branch_cuts[rift.right].point, rift.coord));
+            const rift_points = this.model.rifts.map(rift => Model.HyperbolicPolarCoordinate.getHyperbolaPoint(this.model.branch_points[rift.left].point, this.model.branch_points[rift.right].point, rift.coord));
             const drag_rift_index = rift_points.findIndex(rift_point => rift_point[1]
                 && Geo.norm(Geo.sub(rift_point[0], point)) <= DRAG_RIFT_RADIUS);
             if (drag_rift_index !== -1) {
