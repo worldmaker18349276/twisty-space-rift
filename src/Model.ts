@@ -60,10 +60,7 @@ export type State =
   | { type: StateType.LeftShifted, angle: Geo.Angle }
   | { type: StateType.RightShifted, angle: Geo.Angle };
 
-export enum PuzzleType { Normal, Ramified_DH, Ramified_DV, Ramified_Q }
-
 export type Puzzle = {
-  type: PuzzleType;
   pieces: Piece[];
   stands: Edge[]; // boundary piece's edges at the top intersection point
   ramified: {pieces:Piece[], turn:number}[];
@@ -72,6 +69,10 @@ export type Puzzle = {
   radius: Geo.Distance;
   center_x: Geo.Distance;
   R: Geo.Distance;
+};
+
+export type PuzzleFactory = {
+  make_pieces: () => {pieces:Piece[], stands:Edge[], ramified:{pieces:Piece[], turn:number}[]},
 };
 
 export namespace Puzzle {
@@ -100,7 +101,7 @@ export namespace Puzzle {
   }
 
   // edges[i] <-> edges[i+1].adj
-  function swapAdj(...edges: Edge[]): void {
+  export function swapAdj(...edges: Edge[]): void {
     const adj_edges = rotate(edges, 1).map(edge => edge.adj);
     for (const [edge, adj_edge] of zip(edges, adj_edges))
       adjEdges(edge, adj_edge);
@@ -152,7 +153,7 @@ export namespace Puzzle {
     return makeEdges({type: PieceType.CenterPiece, edges: [], name}, 6);
   }
 
-  function ramifyPiece(name: string, pieces: Piece[], n: number): Piece {
+  export function ramifyPiece(name: string, pieces: Piece[], n: number): Piece {
     const edges = rotate(pieces.flatMap(piece => rotate(piece.edges, n)), -n);
     const type = pieces[0].type;
     const piece: Piece = {type, edges, name};
@@ -163,7 +164,7 @@ export namespace Puzzle {
     return piece;
   }
 
-  function chunkPiece(name: string, piece: Piece, step: number): Piece[] {
+  export function chunkPiece(name: string, piece: Piece, step: number): Piece[] {
     assert(piece.edges.length % step == 0);
     
     const subpieces: Piece[] = [];
@@ -200,7 +201,7 @@ export namespace Puzzle {
     return Edge.walk(puzzle.stands[sheet], steps);
   }
 
-  function makePieces(suffix: string = ""): {pieces:Piece[], stands:Edge[]} {
+  export function makePieces(suffix: string = ""): {pieces:Piece[], stand:Edge} {
     // edges[0]: edge started with center piece
 
     // piece0L: piece touched above intersection point
@@ -341,120 +342,7 @@ export namespace Puzzle {
         pieceCR,
         piece50L,
       ],
-      stands: [pieceBR.edges[0]],
-    };
-  }
-
-  function makeRamifiedDHPieces(n: number): {pieces:Piece[], stands:Edge[], ramified:{pieces:Piece[], turn:number}[]} {
-    const layers = indices(n).map(i => makePieces(`_${i}`));
-    
-    const piece50Ls = layers.map(layer => Edge.walk(layer.stands[0], [0, 1, -1, 1, 0]).aff);
-    const pieceCLs = layers.map(layer => Edge.walk(layer.stands[0], [0, 1, -1, 1]).aff);
-    const pieceCRs = layers.map(layer => Edge.walk(layer.stands[0], [0, 1, -1, -1]).aff);
-
-    // ramify center pieces
-
-    // ramified_pieceCLs[0].edges[1]: the edge from the bottom sheet to the top sheet
-    const ramified_pieceCLs = chunkPiece("CL", ramifyPiece("", pieceCLs, 0), 2);
-
-    // ramified_pieceCRs[0].edges[1]: the edge from the second sheet to the top sheet
-    const ramified_pieceCRs = chunkPiece("CR", ramifyPiece("", rotate(pieceCRs, 1).reverse(), 0), 2);
-
-    // piece50Ls[0].edges[0]: the edge from the second sheet to the top sheet
-    swapAdj(...piece50Ls.map(piece => piece.edges[0]));
-    swapAdj(...piece50Ls.map(piece => piece.edges[3]));
-    
-    const pieces = layers.flatMap(layer => layer.pieces)
-      .filter(p => !pieceCLs.includes(p) && !pieceCRs.includes(p))
-      .concat(ramified_pieceCLs)
-      .concat(ramified_pieceCRs);
-    
-    return {
-      pieces,
-      stands: layers.flatMap(layer => layer.stands),
-      ramified: [{pieces:ramified_pieceCLs, turn:n}, {pieces:ramified_pieceCRs, turn:n}],
-    };
-  }
-
-  function makeRamifiedDVPieces(n: number): {pieces:Piece[], stands:Edge[], ramified:{pieces:Piece[], turn:number}[]} {
-    const layers = indices(n).map(i => makePieces(`_${i}`));
-    
-    const piece50Ls = layers.map(layer => Edge.walk(layer.stands[0], [0, 1, -1, 1, 0]).aff);
-    const piece0Ls = layers.map(layer => Edge.walk(layer.stands[0], [0, 1]).aff);
-    const piece0Rs = layers.map(layer => Edge.walk(layer.stands[0], [0, 1, -1, 2]).aff);
-
-    // ramify corner pieces
-
-    // ramified_piece0Ls[0].edges[1]: the edge from the bottom sheet to the top sheet
-    const ramified_piece0Ls = chunkPiece("0L", ramifyPiece("", piece0Ls, 0), 1);
-
-    // ramified_piece0Rs[0].edges[1]: the edge from the second sheet to the top sheet
-    const ramified_piece0Rs = chunkPiece("0R", ramifyPiece("", rotate(piece0Rs, 1).reverse(), 0), 1);
-
-    // piece50Ls[0].edges[3]: the edge from the second sheet to the top sheet
-    swapAdj(...piece50Ls.map(piece => piece.edges[3]));
-    swapAdj(...piece50Ls.map(piece => piece.edges[2]));
-    
-    const pieces = layers.flatMap(layer => layer.pieces)
-      .filter(p => !piece0Ls.includes(p) && !piece0Rs.includes(p))
-      .concat(ramified_piece0Ls)
-      .concat(ramified_piece0Rs);
-    
-    return {
-      pieces,
-      stands: layers.flatMap(layer => layer.stands),
-      ramified: [{pieces:ramified_piece0Ls, turn:n}, {pieces:ramified_piece0Rs, turn:n}],
-    };
-  }
-
-  function makeRamifiedQPieces(n: number): {pieces:Piece[], stands:Edge[], ramified:{pieces:Piece[], turn:number}[]} {
-    const layers = indices(n).map(i => makePieces(`_${i}`));
-    
-    const piece50Ls = layers.map(layer => Edge.walk(layer.stands[0], [0, 1, -1, 1, 0]).aff);
-    const pieceCLs = layers.map(layer => Edge.walk(layer.stands[0], [0, 1, -1, 1]).aff);
-    const pieceCRs = layers.map(layer => Edge.walk(layer.stands[0], [0, 1, -1, -1]).aff);
-    const piece0Ls = layers.map(layer => Edge.walk(layer.stands[0], [0, 1]).aff);
-    const piece0Rs = layers.map(layer => Edge.walk(layer.stands[0], [0, 1, -1, 2]).aff);
-
-    // ramify center pieces
-
-    // ramified_pieceCLs[0].edges[1]: the edge from the bottom sheet to the top sheet
-    const ramified_pieceCLs = chunkPiece("CL", ramifyPiece("", pieceCLs, 0), 2);
-
-    // ramified_pieceCRs[0].edges[1]: the edge from the second sheet to the top sheet
-    const ramified_pieceCRs = chunkPiece("CR", ramifyPiece("", rotate(pieceCRs, 1).reverse(), 0), 2);
-
-    // ramify corner pieces
-
-    // ramified_piece0Ls[0].edges[1]: the edge from the bottom sheet to the top sheet
-    const ramified_piece0Ls = chunkPiece("0L", ramifyPiece("", piece0Ls, 0), 1);
-
-    // ramified_piece0Rs[0].edges[1]: the edge from the second sheet to the top sheet
-    const ramified_piece0Rs = chunkPiece("0R", ramifyPiece("", rotate(piece0Rs, 1).reverse(), 0), 1);
-
-    // piece50Ls[0].edges[0]: the edge from the top sheet to the bottom sheet
-    // piece50Ls[0].edges[1]: the edge from the bottom sheet to the top sheet
-    // piece50Ls[0].edges[2]: the edge from the top sheet to the second sheet
-    // piece50Ls[0].edges[3]: the edge from the second sheet to the top sheet
-    swapAdj(...piece50Ls.map(piece => piece.edges[1]).reverse());
-    swapAdj(...piece50Ls.map(piece => piece.edges[3]));
-    
-    const pieces = layers.flatMap(layer => layer.pieces)
-      .filter(p => !pieceCLs.includes(p) && !pieceCRs.includes(p) && !piece0Ls.includes(p) && !piece0Rs.includes(p))
-      .concat(ramified_pieceCLs)
-      .concat(ramified_pieceCRs)
-      .concat(ramified_piece0Ls)
-      .concat(ramified_piece0Rs);
-    
-    return {
-      pieces,
-      stands: layers.flatMap(layer => layer.stands),
-      ramified: [
-        {pieces:ramified_pieceCLs, turn:n},
-        {pieces:ramified_pieceCRs, turn:n},
-        {pieces:ramified_piece0Ls, turn:n},
-        {pieces:ramified_piece0Rs, turn:n},
-      ],
+      stand: pieceBR.edges[0],
     };
   }
 
@@ -465,53 +353,10 @@ export namespace Puzzle {
     assert(center_x * 2 > radius);
     assert(R > center_x + radius);
   }
-  export function makeNormalPuzzle(radius: Geo.Distance, center_x: Geo.Distance, R: Geo.Distance): Puzzle {
+  export function makePuzzle(factory: PuzzleFactory, radius: Geo.Distance, center_x: Geo.Distance, R: Geo.Distance): Puzzle {
     ckeckPuzzleShape(radius, center_x, R);
-    const {pieces, stands} = makePieces();
+    const {pieces, stands, ramified} = factory.make_pieces();
     return {
-      type: PuzzleType.Normal,
-      pieces,
-      stands,
-      ramified: [],
-      states: indices(stands.length).map(_ => ({ type: StateType.Aligned })),
-      radius,
-      center_x,
-      R,
-    };
-  }
-  export function makeRamifiedDHPuzzle(turn: number, radius: Geo.Distance, center_x: Geo.Distance, R: Geo.Distance): Puzzle {
-    ckeckPuzzleShape(radius, center_x, R);
-    const {pieces, stands, ramified} = makeRamifiedDHPieces(turn);
-    return {
-      type: PuzzleType.Ramified_DH,
-      pieces,
-      stands,
-      ramified,
-      states: indices(stands.length).map(_ => ({ type: StateType.Aligned })),
-      radius,
-      center_x,
-      R,
-    };
-  }
-  export function makeRamifiedDVPuzzle(turn: number, radius: Geo.Distance, center_x: Geo.Distance, R: Geo.Distance): Puzzle {
-    ckeckPuzzleShape(radius, center_x, R);
-    const {pieces, stands, ramified} = makeRamifiedDVPieces(turn);
-    return {
-      type: PuzzleType.Ramified_DH,
-      pieces,
-      stands,
-      ramified,
-      states: indices(stands.length).map(_ => ({ type: StateType.Aligned })),
-      radius,
-      center_x,
-      R,
-    };
-  }
-  export function makeRamifiedQPuzzle(turn: number, radius: Geo.Distance, center_x: Geo.Distance, R: Geo.Distance): Puzzle {
-    ckeckPuzzleShape(radius, center_x, R);
-    const {pieces, stands, ramified} = makeRamifiedQPieces(turn);
-    return {
-      type: PuzzleType.Ramified_Q,
       pieces,
       stands,
       ramified,
@@ -1025,52 +870,23 @@ export type PrincipalPuzzle = Puzzle & {
   rifts: {left:number, right:number, coord:HyperbolicPolarCoordinate}[];
 };
 
+export type PrincipalPuzzleFactory = PuzzleFactory & {
+  make_rifts: (radius: Geo.Distance, center_x: Geo.Distance, R: Geo.Distance) => {
+    branch_cuts: {point: Geo.Point, cut_angle:Geo.Angle, principal:number|undefined}[];
+    rifts: {left:number, right:number, coord:HyperbolicPolarCoordinate}[];
+  },
+};
+
 export namespace PrincipalPuzzle {
   const MAX_RIFT_OFFSET = 0.8;
 
-  export function makeRamifiedDHPuzzle(turn: number, radius: Geo.Distance, center_x: Geo.Distance, R: Geo.Distance): PrincipalPuzzle {
-    const puzzle = Puzzle.makeRamifiedDHPuzzle(turn, radius, center_x, R);
+  export function makePuzzle(factory: PrincipalPuzzleFactory, radius: Geo.Distance, center_x: Geo.Distance, R: Geo.Distance): PrincipalPuzzle {
+    const puzzle = Puzzle.makePuzzle(factory, radius, center_x, R);
+    const rifts = factory.make_rifts(radius, center_x, R);
 
     return {
       ...puzzle,
-      branch_cuts: [
-        {point: [-center_x, 0], cut_angle: Math.PI/6, principal:0},
-        {point: [center_x, 0], cut_angle: Math.PI/6, principal:0},
-      ],
-      rifts: [
-        {left:0, right:1, coord:{offset:0.0, angle:0.0}}
-      ],
-    };
-  }
-  export function makeRamifiedDVPuzzle(turn: number, radius: Geo.Distance, center_x: Geo.Distance, R: Geo.Distance): PrincipalPuzzle {
-    const puzzle = Puzzle.makeRamifiedDVPuzzle(turn, radius, center_x, R);
-
-    return {
-      ...puzzle,
-      branch_cuts: [
-        {point: [0, center_x/Math.sqrt(3)], cut_angle: Math.PI/3, principal:0},
-        {point: [0, -center_x/Math.sqrt(3)], cut_angle: Math.PI/3, principal:0},
-      ],
-      rifts: [
-        {left:0, right:1, coord:{offset:0.0, angle:0.0}}
-      ],
-    };
-  }
-  export function makeRamifiedQPuzzle(turn: number, radius: Geo.Distance, center_x: Geo.Distance, R: Geo.Distance): PrincipalPuzzle {
-    const puzzle = Puzzle.makeRamifiedQPuzzle(turn, radius, center_x, R);
-
-    return {
-      ...puzzle,
-      branch_cuts: [
-        {point: [-center_x, 0], cut_angle: Math.PI/6, principal:0},
-        {point: [center_x, 0], cut_angle: Math.PI/6, principal:0},
-        {point: [0, center_x/Math.sqrt(3)], cut_angle: Math.PI/3, principal:0},
-        {point: [0, -center_x/Math.sqrt(3)], cut_angle: Math.PI/3, principal:0},
-      ],
-      rifts: [
-        {left:0, right:1, coord:{offset:0.0, angle:0.0}},
-        {left:2, right:3, coord:{offset:0.0, angle:0.0}},
-      ],
+      ...rifts,
     };
   }
 
@@ -1453,6 +1269,92 @@ export type ClippedImage<Image> = {
   region: Geo.Path<Geo.CutSource<Edge, undefined>>;
 };
 
+export type PrincipalPuzzleWithTexture<Image> = PrincipalPuzzle & {
+  unshifted_positions: Map<Piece, Geo.RigidTransformation>;
+  texture_indices: Map<Piece, number>;
+  textures: Image[];
+};
+
+export type PrincipalPuzzleWithTextureFactory = PrincipalPuzzleFactory & {
+  make_texture_functions: (puzzle: PrincipalPuzzle) => Complex.ComplexFunction[],
+  determine_texture_indices: (puzzle: PrincipalPuzzle) => Map<Piece, number>;
+};
+
+export namespace PrincipalPuzzleWithTexture {
+  export function makePuzzle<Image>(
+    factory: PrincipalPuzzleWithTextureFactory,
+    radius: Geo.Distance,
+    center_x: Geo.Distance,
+    R: Geo.Distance,
+    draw_image: (f: Complex.ComplexFunction) => Image,
+  ): PrincipalPuzzleWithTexture<Image> {
+    const puzzle = PrincipalPuzzle.makePuzzle(factory, radius, center_x, R);
+    const textures = factory.make_texture_functions(puzzle).map(draw_image);
+    const unshifted_positions = new Map(puzzle.pieces.map(piece => [piece, Geo.id_trans()]));
+    const texture_indices = factory.determine_texture_indices(puzzle);
+
+    return {
+      ...puzzle,
+      unshifted_positions,
+      texture_indices,
+      textures,
+    };
+  }
+
+  export function getPositions<Image>(puzzle: PrincipalPuzzleWithTexture<Image>): Map<Piece, Geo.RigidTransformation> {
+    const positions = new Map(puzzle.unshifted_positions);
+    for (const trans of Puzzle.getShiftTransformations(puzzle)) {
+      const [sheet] = trans.sheets;
+      for (const piece of Puzzle.getTwistPieces(puzzle, trans.side, sheet)!.pieces)
+        positions.set(piece, Geo.compose(positions.get(piece)!, trans.trans));
+    }
+    return positions;
+  }
+
+  export function calculateClippedImages<Image>(puzzle: PrincipalPuzzleWithTexture<Image>): {images:Set<ClippedImage<Image>>, rifts:Geo.Path<undefined>[]} | undefined {
+    const positions = getPositions(puzzle);
+    const clipped_shapes = PrincipalPuzzle.calculateClippedShapes(puzzle);
+    if (clipped_shapes === undefined) return undefined;
+    const images = new Set<ClippedImage<Image>>();
+    for (const [piece, shapes] of clipped_shapes.principal) {
+      for (const shape of shapes) {
+        images.add({
+          image: puzzle.textures[puzzle.texture_indices.get(piece)!],
+          region: shape,
+          transformation: positions.get(piece)!,
+        });
+      }
+    }
+    return {images, rifts:clipped_shapes.rifts};
+  }
+
+  export function twistTo<Image>(puzzle: PrincipalPuzzleWithTexture<Image>, side: boolean, sheet: number, angle: Geo.Angle): boolean {
+    return PrincipalPuzzle.twistTo(puzzle, side, sheet, angle);
+  }
+  export function snap<Image>(puzzle: PrincipalPuzzleWithTexture<Image>): boolean {
+    const trans = PrincipalPuzzle.snap(puzzle);
+    if (trans.length === 0) return false;
+
+    for (const {side, sheets, turn} of trans) {
+      const twist_trans1 = Puzzle.getTwistTransformation(puzzle, side, turn > 0);
+      let twist_trans = Geo.id_trans();
+      for (const n of indices(Math.abs(turn)))
+        twist_trans = Geo.compose(twist_trans, twist_trans1);
+
+      const [sheet] = sheets;
+      for (const piece of Puzzle.getTwistPieces(puzzle, side, sheet)!.pieces) {
+        let trans = puzzle.unshifted_positions.get(piece)!;
+        trans = Geo.compose(trans, twist_trans);
+        puzzle.unshifted_positions.set(piece, trans);
+      }
+    }
+    return true;
+  }
+  export function setRift<Image>(puzzle: PrincipalPuzzleWithTexture<Image>, index: number, coord: HyperbolicPolarCoordinate): boolean {
+    return PrincipalPuzzle.setRift(puzzle, index, coord);
+  }
+}
+
 export namespace Textures {
   export function getDHTextureFunction(
     puzzle: PrincipalPuzzle,
@@ -1581,197 +1483,249 @@ export namespace Textures {
   }
 }
 
-export type PrincipalPuzzleWithTexture<Image> = PrincipalPuzzle & {
-  unshifted_positions: Map<Piece, Geo.RigidTransformation>;
-  texture_indices: Map<Piece, number>;
-  textures: Image[];
-};
+export namespace Factory {
+  export function DH(turn: number, scale: number): PrincipalPuzzleWithTextureFactory {
+    return {
+      make_pieces: () => {
+        const layers = indices(turn).map(i => Puzzle.makePieces(`_${i}`));
+        
+        const piece50Ls = layers.map(layer => Edge.walk(layer.stand, [0, 1, -1, 1, 0]).aff);
+        const pieceCLs = layers.map(layer => Edge.walk(layer.stand, [0, 1, -1, 1]).aff);
+        const pieceCRs = layers.map(layer => Edge.walk(layer.stand, [0, 1, -1, -1]).aff);
 
-export namespace PrincipalPuzzleWithTexture {
-  export function makeRamifiedDHPuzzle<Image>(
-    turn: number,
-    radius: Geo.Distance,
-    center_x: Geo.Distance,
-    R: Geo.Distance,
-    draw_image: (f: Complex.ComplexFunction) => Image,
-    scale: number = 1,
-  ): PrincipalPuzzleWithTexture<Image> {
-    const puzzle = PrincipalPuzzle.makeRamifiedDHPuzzle(turn, radius, center_x, R);
-    const textures = Textures.getDHTextureFunction(puzzle, turn, scale).map(draw_image);
-    const unshifted_positions = new Map(puzzle.pieces.map(piece => [piece, Geo.id_trans()]));
+        // ramify center pieces
 
-    const texture_indices = new Map<Piece, number>();
-    for (const sheet of indices(puzzle.stands.length)) {
-      const texture_index = mod(2*sheet-1, 2*turn);
-      const edgeCL = Puzzle.edgeAt(puzzle, sheet, [0, 1, -1, 1]);
-      texture_indices.set(edgeCL.aff, texture_index);
-      texture_indices.set(Edge.walk(edgeCL, [0]).aff, texture_index);
-      texture_indices.set(Edge.walk(edgeCL, [0, 2]).aff, texture_index);
-    }
-    for (const sheet of indices(puzzle.stands.length)) {
-      const layer = new Set<Piece>();
-      layer.add(Puzzle.edgeAt(puzzle, sheet, []).aff);
-      for (const piece of layer) {
-        for (const edge of piece.edges) {
-          const adj_piece = edge.adj.aff;
-          if (adj_piece.type !== PieceType.InfPiece && !texture_indices.has(adj_piece)) {
-            layer.add(adj_piece);
+        // ramified_pieceCLs[0].edges[1]: the edge from the bottom sheet to the top sheet
+        const ramified_pieceCLs = Puzzle.chunkPiece("CL", Puzzle.ramifyPiece("", pieceCLs, 0), 2);
+
+        // ramified_pieceCRs[0].edges[1]: the edge from the second sheet to the top sheet
+        const ramified_pieceCRs = Puzzle.chunkPiece("CR", Puzzle.ramifyPiece("", rotate(pieceCRs, 1).reverse(), 0), 2);
+
+        // piece50Ls[0].edges[0]: the edge from the second sheet to the top sheet
+        Puzzle.swapAdj(...piece50Ls.map(piece => piece.edges[0]));
+        Puzzle.swapAdj(...piece50Ls.map(piece => piece.edges[3]));
+        
+        const pieces = layers.flatMap(layer => layer.pieces)
+          .filter(p => !pieceCLs.includes(p) && !pieceCRs.includes(p))
+          .concat(ramified_pieceCLs)
+          .concat(ramified_pieceCRs);
+        
+        return {
+          pieces,
+          stands: layers.map(layer => layer.stand),
+          ramified: [{pieces:ramified_pieceCLs, turn}, {pieces:ramified_pieceCRs, turn}],
+        };
+      },
+      make_rifts: (radius: Geo.Distance, center_x: Geo.Distance, R: Geo.Distance) => {
+        return {
+          branch_cuts: [
+            {point: [-center_x, 0], cut_angle: Math.PI/6, principal:0},
+            {point: [center_x, 0], cut_angle: Math.PI/6, principal:0},
+          ],
+          rifts: [
+            {left:0, right:1, coord:{offset:0.0, angle:0.0}}
+          ],
+        };
+      },
+      make_texture_functions: puzzle => Textures.getDHTextureFunction(puzzle, turn, scale),
+      determine_texture_indices: (puzzle: PrincipalPuzzle) => {
+        const texture_indices = new Map<Piece, number>();
+        for (const sheet of indices(puzzle.stands.length)) {
+          const texture_index = mod(2*sheet-1, 2*puzzle.stands.length);
+          const edgeCL = Puzzle.edgeAt(puzzle, sheet, [0, 1, -1, 1]);
+          texture_indices.set(edgeCL.aff, texture_index);
+          texture_indices.set(Edge.walk(edgeCL, [0]).aff, texture_index);
+          texture_indices.set(Edge.walk(edgeCL, [0, 2]).aff, texture_index);
+        }
+        for (const sheet of indices(puzzle.stands.length)) {
+          const layer = new Set<Piece>();
+          layer.add(Puzzle.edgeAt(puzzle, sheet, []).aff);
+          for (const piece of layer) {
+            for (const edge of piece.edges) {
+              const adj_piece = edge.adj.aff;
+              if (adj_piece.type !== PieceType.InfPiece && !texture_indices.has(adj_piece)) {
+                layer.add(adj_piece);
+              }
+            }
+          }
+          for (const piece of layer) {
+            texture_indices.set(piece, 2*sheet);
           }
         }
-      }
-      for (const piece of layer) {
-        texture_indices.set(piece, 2*sheet);
-      }
-    }
-
-    return {
-      ...puzzle,
-      unshifted_positions,
-      texture_indices,
-      textures,
+        return texture_indices;
+      },
     };
   }
 
-  export function makeRamifiedDVPuzzle<Image>(
-    turn: number,
-    radius: Geo.Distance,
-    center_x: Geo.Distance,
-    R: Geo.Distance,
-    draw_image: (f: Complex.ComplexFunction) => Image,
-    scale: number = 1,
-  ): PrincipalPuzzleWithTexture<Image> {
-    const puzzle = PrincipalPuzzle.makeRamifiedDVPuzzle(turn, radius, center_x, R);
-    const textures = Textures.getDVTextureFunction(puzzle, turn, scale).map(draw_image);
-    const unshifted_positions = new Map(puzzle.pieces.map(piece => [piece, Geo.id_trans()]));
+  export function DV(turn: number, scale: number): PrincipalPuzzleWithTextureFactory {
+    return {
+      make_pieces: () => {
+        const layers = indices(turn).map(i => Puzzle.makePieces(`_${i}`));
+        
+        const piece50Ls = layers.map(layer => Edge.walk(layer.stand, [0, 1, -1, 1, 0]).aff);
+        const piece0Ls = layers.map(layer => Edge.walk(layer.stand, [0, 1]).aff);
+        const piece0Rs = layers.map(layer => Edge.walk(layer.stand, [0, 1, -1, 2]).aff);
 
-    const texture_indices = new Map<Piece, number>();
-    for (const sheet of indices(puzzle.stands.length)) {
-      const texture_index = mod(2*sheet-1, 2*turn);
-      const edge0L = Puzzle.edgeAt(puzzle, sheet, [0, 1, -1, 0]);
-      texture_indices.set(edge0L.aff, texture_index);
-      texture_indices.set(Edge.walk(edge0L, [0]).aff, texture_index);
-      texture_indices.set(Edge.walk(edge0L, [0, 2]).aff, texture_index);
-    }
-    for (const sheet of indices(puzzle.stands.length)) {
-      const layer = new Set<Piece>();
-      layer.add(Puzzle.edgeAt(puzzle, sheet, []).aff);
-      for (const piece of layer) {
-        for (const edge of piece.edges) {
-          const adj_piece = edge.adj.aff;
-          if (adj_piece.type !== PieceType.InfPiece && !texture_indices.has(adj_piece)) {
-            layer.add(adj_piece);
+        // ramify corner pieces
+
+        // ramified_piece0Ls[0].edges[1]: the edge from the bottom sheet to the top sheet
+        const ramified_piece0Ls = Puzzle.chunkPiece("0L", Puzzle.ramifyPiece("", piece0Ls, 0), 1);
+
+        // ramified_piece0Rs[0].edges[1]: the edge from the second sheet to the top sheet
+        const ramified_piece0Rs = Puzzle.chunkPiece("0R", Puzzle.ramifyPiece("", rotate(piece0Rs, 1).reverse(), 0), 1);
+
+        // piece50Ls[0].edges[3]: the edge from the second sheet to the top sheet
+        Puzzle.swapAdj(...piece50Ls.map(piece => piece.edges[3]));
+        Puzzle.swapAdj(...piece50Ls.map(piece => piece.edges[2]));
+        
+        const pieces = layers.flatMap(layer => layer.pieces)
+          .filter(p => !piece0Ls.includes(p) && !piece0Rs.includes(p))
+          .concat(ramified_piece0Ls)
+          .concat(ramified_piece0Rs);
+        
+        return {
+          pieces,
+          stands: layers.map(layer => layer.stand),
+          ramified: [{pieces:ramified_piece0Ls, turn}, {pieces:ramified_piece0Rs, turn}],
+        };
+      },
+      make_rifts: (radius: Geo.Distance, center_x: Geo.Distance, R: Geo.Distance) => {
+        return {
+          branch_cuts: [
+            {point: [0, center_x/Math.sqrt(3)], cut_angle: Math.PI/3, principal:0},
+            {point: [0, -center_x/Math.sqrt(3)], cut_angle: Math.PI/3, principal:0},
+          ],
+          rifts: [
+            {left:0, right:1, coord:{offset:0.0, angle:0.0}}
+          ],
+        };
+      },
+      make_texture_functions: puzzle => Textures.getDVTextureFunction(puzzle, turn, scale),
+      determine_texture_indices: (puzzle: PrincipalPuzzle) => {
+        const texture_indices = new Map<Piece, number>();
+        for (const sheet of indices(puzzle.stands.length)) {
+          const texture_index = mod(2*sheet-1, 2*puzzle.stands.length);
+          const edge0L = Puzzle.edgeAt(puzzle, sheet, [0, 1, -1, 0]);
+          texture_indices.set(edge0L.aff, texture_index);
+          texture_indices.set(Edge.walk(edge0L, [0]).aff, texture_index);
+          texture_indices.set(Edge.walk(edge0L, [0, 2]).aff, texture_index);
+        }
+        for (const sheet of indices(puzzle.stands.length)) {
+          const layer = new Set<Piece>();
+          layer.add(Puzzle.edgeAt(puzzle, sheet, []).aff);
+          for (const piece of layer) {
+            for (const edge of piece.edges) {
+              const adj_piece = edge.adj.aff;
+              if (adj_piece.type !== PieceType.InfPiece && !texture_indices.has(adj_piece)) {
+                layer.add(adj_piece);
+              }
+            }
+          }
+          for (const piece of layer) {
+            texture_indices.set(piece, 2*sheet);
           }
         }
-      }
-      for (const piece of layer) {
-        texture_indices.set(piece, 2*sheet);
-      }
-    }
-
-    return {
-      ...puzzle,
-      unshifted_positions,
-      texture_indices,
-      textures,
+        return texture_indices;
+      },
     };
   }
 
-  export function makeRamifiedQPuzzle<Image>(
-    turn: number,
-    radius: Geo.Distance,
-    center_x: Geo.Distance,
-    R: Geo.Distance,
-    draw_image: (f: Complex.ComplexFunction) => Image,
-    scale: number = 1,
-  ): PrincipalPuzzleWithTexture<Image> {
-    const puzzle = PrincipalPuzzle.makeRamifiedQPuzzle(turn, radius, center_x, R);
-    const textures = Textures.getQTextureFunction(puzzle, turn, scale).map(draw_image);
-    const unshifted_positions = new Map(puzzle.pieces.map(piece => [piece, Geo.id_trans()]));
+  export function Q(turn: number, scale: number): PrincipalPuzzleWithTextureFactory {
+    return {
+      make_pieces: () => {
+        const layers = indices(turn).map(i => Puzzle.makePieces(`_${i}`));
+        
+        const piece50Ls = layers.map(layer => Edge.walk(layer.stand, [0, 1, -1, 1, 0]).aff);
+        const pieceCLs = layers.map(layer => Edge.walk(layer.stand, [0, 1, -1, 1]).aff);
+        const pieceCRs = layers.map(layer => Edge.walk(layer.stand, [0, 1, -1, -1]).aff);
+        const piece0Ls = layers.map(layer => Edge.walk(layer.stand, [0, 1]).aff);
+        const piece0Rs = layers.map(layer => Edge.walk(layer.stand, [0, 1, -1, 2]).aff);
 
-    const texture_indices = new Map<Piece, number>();
-    for (const sheet of indices(puzzle.stands.length)) {
-      const texture_index = mod(2*sheet-3, 2*turn);
-      const edge = Puzzle.edgeAt(puzzle, sheet, [0, 1, -1]);
-      texture_indices.set(edge.aff, texture_index);
-      texture_indices.set(Edge.walk(edge, [0]).aff, texture_index);
-      texture_indices.set(Edge.walk(edge, [1]).aff, texture_index);
-      texture_indices.set(Edge.walk(edge, [2]).aff, texture_index);
-      texture_indices.set(Edge.walk(edge, [3]).aff, texture_index);
-    }
-    for (const sheet of indices(puzzle.stands.length)) {
-      const layer = new Set<Piece>();
-      layer.add(Puzzle.edgeAt(puzzle, sheet, []).aff);
-      for (const piece of layer) {
-        for (const edge of piece.edges) {
-          const adj_piece = edge.adj.aff;
-          if (adj_piece.type !== PieceType.InfPiece && !texture_indices.has(adj_piece)) {
-            layer.add(adj_piece);
+        // ramify center pieces
+
+        // ramified_pieceCLs[0].edges[1]: the edge from the bottom sheet to the top sheet
+        const ramified_pieceCLs = Puzzle.chunkPiece("CL", Puzzle.ramifyPiece("", pieceCLs, 0), 2);
+
+        // ramified_pieceCRs[0].edges[1]: the edge from the second sheet to the top sheet
+        const ramified_pieceCRs = Puzzle.chunkPiece("CR", Puzzle.ramifyPiece("", rotate(pieceCRs, 1).reverse(), 0), 2);
+
+        // ramify corner pieces
+
+        // ramified_piece0Ls[0].edges[1]: the edge from the bottom sheet to the top sheet
+        const ramified_piece0Ls = Puzzle.chunkPiece("0L", Puzzle.ramifyPiece("", piece0Ls, 0), 1);
+
+        // ramified_piece0Rs[0].edges[1]: the edge from the second sheet to the top sheet
+        const ramified_piece0Rs = Puzzle.chunkPiece("0R", Puzzle.ramifyPiece("", rotate(piece0Rs, 1).reverse(), 0), 1);
+
+        // piece50Ls[0].edges[0]: the edge from the top sheet to the bottom sheet
+        // piece50Ls[0].edges[1]: the edge from the bottom sheet to the top sheet
+        // piece50Ls[0].edges[2]: the edge from the top sheet to the second sheet
+        // piece50Ls[0].edges[3]: the edge from the second sheet to the top sheet
+        Puzzle.swapAdj(...piece50Ls.map(piece => piece.edges[1]).reverse());
+        Puzzle.swapAdj(...piece50Ls.map(piece => piece.edges[3]));
+        
+        const pieces = layers.flatMap(layer => layer.pieces)
+          .filter(p => !pieceCLs.includes(p) && !pieceCRs.includes(p) && !piece0Ls.includes(p) && !piece0Rs.includes(p))
+          .concat(ramified_pieceCLs)
+          .concat(ramified_pieceCRs)
+          .concat(ramified_piece0Ls)
+          .concat(ramified_piece0Rs);
+        
+        return {
+          pieces,
+          stands: layers.map(layer => layer.stand),
+          ramified: [
+            {pieces:ramified_pieceCLs, turn},
+            {pieces:ramified_pieceCRs, turn},
+            {pieces:ramified_piece0Ls, turn},
+            {pieces:ramified_piece0Rs, turn},
+          ],
+        };
+      },
+      make_rifts: (radius: Geo.Distance, center_x: Geo.Distance, R: Geo.Distance) => {
+        return {
+          branch_cuts: [
+            {point: [-center_x, 0], cut_angle: Math.PI/6, principal:0},
+            {point: [center_x, 0], cut_angle: Math.PI/6, principal:0},
+            {point: [0, center_x/Math.sqrt(3)], cut_angle: Math.PI/3, principal:0},
+            {point: [0, -center_x/Math.sqrt(3)], cut_angle: Math.PI/3, principal:0},
+          ],
+          rifts: [
+            {left:0, right:1, coord:{offset:0.0, angle:0.0}},
+            {left:2, right:3, coord:{offset:0.0, angle:0.0}},
+          ],
+        };
+      },
+      make_texture_functions: puzzle => Textures.getQTextureFunction(puzzle, turn, scale),
+      determine_texture_indices: (puzzle: PrincipalPuzzle) => {
+        const texture_indices = new Map<Piece, number>();
+        for (const sheet of indices(puzzle.stands.length)) {
+          const texture_index = mod(2*sheet-3, 2*puzzle.stands.length);
+          const edge = Puzzle.edgeAt(puzzle, sheet, [0, 1, -1]);
+          texture_indices.set(edge.aff, texture_index);
+          texture_indices.set(Edge.walk(edge, [0]).aff, texture_index);
+          texture_indices.set(Edge.walk(edge, [1]).aff, texture_index);
+          texture_indices.set(Edge.walk(edge, [2]).aff, texture_index);
+          texture_indices.set(Edge.walk(edge, [3]).aff, texture_index);
+        }
+        for (const sheet of indices(puzzle.stands.length)) {
+          const layer = new Set<Piece>();
+          layer.add(Puzzle.edgeAt(puzzle, sheet, []).aff);
+          for (const piece of layer) {
+            for (const edge of piece.edges) {
+              const adj_piece = edge.adj.aff;
+              if (adj_piece.type !== PieceType.InfPiece && !texture_indices.has(adj_piece)) {
+                layer.add(adj_piece);
+              }
+            }
+          }
+          for (const piece of layer) {
+            texture_indices.set(piece, 2*sheet);
           }
         }
-      }
-      for (const piece of layer) {
-        texture_indices.set(piece, 2*sheet);
-      }
-    }
-
-    return {
-      ...puzzle,
-      unshifted_positions,
-      texture_indices,
-      textures,
+        return texture_indices;
+      },
     };
   }
 
-  export function getPositions<Image>(puzzle: PrincipalPuzzleWithTexture<Image>): Map<Piece, Geo.RigidTransformation> {
-    const positions = new Map(puzzle.unshifted_positions);
-    for (const trans of Puzzle.getShiftTransformations(puzzle)) {
-      const [sheet] = trans.sheets;
-      for (const piece of Puzzle.getTwistPieces(puzzle, trans.side, sheet)!.pieces)
-        positions.set(piece, Geo.compose(positions.get(piece)!, trans.trans));
-    }
-    return positions;
-  }
-
-  export function calculateClippedImages<Image>(puzzle: PrincipalPuzzleWithTexture<Image>): {images:Set<ClippedImage<Image>>, rifts:Geo.Path<undefined>[]} | undefined {
-    const positions = getPositions(puzzle);
-    const clipped_shapes = PrincipalPuzzle.calculateClippedShapes(puzzle);
-    if (clipped_shapes === undefined) return undefined;
-    const images = new Set<ClippedImage<Image>>();
-    for (const [piece, shapes] of clipped_shapes.principal) {
-      for (const shape of shapes) {
-        images.add({
-          image: puzzle.textures[puzzle.texture_indices.get(piece)!],
-          region: shape,
-          transformation: positions.get(piece)!,
-        });
-      }
-    }
-    return {images, rifts:clipped_shapes.rifts};
-  }
-
-  export function twistTo<Image>(puzzle: PrincipalPuzzleWithTexture<Image>, side: boolean, sheet: number, angle: Geo.Angle): boolean {
-    return PrincipalPuzzle.twistTo(puzzle, side, sheet, angle);
-  }
-  export function snap<Image>(puzzle: PrincipalPuzzleWithTexture<Image>): boolean {
-    const trans = PrincipalPuzzle.snap(puzzle);
-    if (trans.length === 0) return false;
-
-    for (const {side, sheets, turn} of trans) {
-      const twist_trans1 = Puzzle.getTwistTransformation(puzzle, side, turn > 0);
-      let twist_trans = Geo.id_trans();
-      for (const n of indices(Math.abs(turn)))
-        twist_trans = Geo.compose(twist_trans, twist_trans1);
-
-      const [sheet] = sheets;
-      for (const piece of Puzzle.getTwistPieces(puzzle, side, sheet)!.pieces) {
-        let trans = puzzle.unshifted_positions.get(piece)!;
-        trans = Geo.compose(trans, twist_trans);
-        puzzle.unshifted_positions.set(piece, trans);
-      }
-    }
-    return true;
-  }
-  export function setRift<Image>(puzzle: PrincipalPuzzleWithTexture<Image>, index: number, coord: HyperbolicPolarCoordinate): boolean {
-    return PrincipalPuzzle.setRift(puzzle, index, coord);
-  }
 }

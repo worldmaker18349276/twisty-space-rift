@@ -53,23 +53,23 @@ export class SpaceRiftPuzzle {
         const image_y_range = [cs.y_range[0], cs.y_range[1]];
         const drawComplex = (f) => Draw.drawComplex(cs, f, image_x_range, image_y_range);
         if (variant === PuzzleVariant.Dipole2H) {
-            const model = Model.PrincipalPuzzleWithTexture.makeRamifiedDHPuzzle(2, radius, center_x, R, drawComplex);
+            const model = Model.PrincipalPuzzleWithTexture.makePuzzle(Model.Factory.DH(2, 1), radius, center_x, R, drawComplex);
             return new SpaceRiftPuzzle({ variant, canvas, model, cs });
         }
         else if (variant === PuzzleVariant.Dipole2V) {
-            const model = Model.PrincipalPuzzleWithTexture.makeRamifiedDVPuzzle(2, radius, center_x, R, drawComplex);
+            const model = Model.PrincipalPuzzleWithTexture.makePuzzle(Model.Factory.DV(2, 1), radius, center_x, R, drawComplex);
             return new SpaceRiftPuzzle({ variant, canvas, model, cs });
         }
         else if (variant === PuzzleVariant.Dipole3H) {
-            const model = Model.PrincipalPuzzleWithTexture.makeRamifiedDHPuzzle(3, radius, center_x, R, drawComplex);
+            const model = Model.PrincipalPuzzleWithTexture.makePuzzle(Model.Factory.DH(3, 1), radius, center_x, R, drawComplex);
             return new SpaceRiftPuzzle({ variant, canvas, model, cs });
         }
         else if (variant === PuzzleVariant.Dipole3V) {
-            const model = Model.PrincipalPuzzleWithTexture.makeRamifiedDVPuzzle(3, radius, center_x, R, drawComplex);
+            const model = Model.PrincipalPuzzleWithTexture.makePuzzle(Model.Factory.DV(3, 1), radius, center_x, R, drawComplex);
             return new SpaceRiftPuzzle({ variant, canvas, model, cs });
         }
         else if (variant === PuzzleVariant.Quadrapole3) {
-            const model = Model.PrincipalPuzzleWithTexture.makeRamifiedQPuzzle(3, radius, center_x, R, drawComplex);
+            const model = Model.PrincipalPuzzleWithTexture.makePuzzle(Model.Factory.Q(3, 1), radius, center_x, R, drawComplex);
             return new SpaceRiftPuzzle({ variant, canvas, model, cs });
         }
         else {
