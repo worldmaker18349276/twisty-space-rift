@@ -138,17 +138,18 @@ export class SpaceRiftPuzzle {
       const t = (time - this.control_state.start_time) / this.control_state.duration;
       if (!Number.isFinite(t) || t > 1) {
         assert(this.model.states[this.control_state.sheet].type !== Model.StateType.Aligned);
-        Model.PrincipalPuzzleWithTexture.twistTo(
+        Model.PrincipalPuzzleWithTexture.setShift(
           this.model,
           this.control_state.side,
           this.control_state.sheet,
           this.control_state.angle_to,
         );
         Model.PrincipalPuzzleWithTexture.snap(this.model);
+        assert(Model.Puzzle.isAligned(this.model));
         this.control_state = {type: PuzzleControlStateType.Ready};
       } else {
         const angle = this.control_state.angle_from + (this.control_state.angle_to - this.control_state.angle_from) * t;
-        Model.PrincipalPuzzleWithTexture.twistTo(
+        Model.PrincipalPuzzleWithTexture.setShift(
           this.model,
           this.control_state.side,
           this.control_state.sheet,
@@ -284,7 +285,7 @@ export class SpaceRiftPuzzle {
     duration ??= TWIST_DURATION;
 
     const step_angle = Math.PI/3;
-    Model.PrincipalPuzzleWithTexture.twistTo(this.model, side, sheet, 0);
+    Model.PrincipalPuzzleWithTexture.setShift(this.model, side, sheet, 0);
     this.control_state = {
       type: PuzzleControlStateType.Twisting,
       duration,

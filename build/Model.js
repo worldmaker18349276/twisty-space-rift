@@ -355,7 +355,7 @@ export var Puzzle;
     }
     // side = true: left
     // sheets: Puzzle.getTwistPieces(puzzle, side, sheet).sheets
-    function twistTo(puzzle, side, sheets, angle) {
+    function setShift(puzzle, side, sheets, angle) {
         if (side && Array.from(sheets).every(sheet => puzzle.states[sheet].type !== StateType.RightShifted)) {
             assert(Array.from(sheets).every(sheet => puzzle.states[sheet].type === StateType.LeftShifted)
                 || Array.from(sheets).every(sheet => puzzle.states[sheet].type === StateType.Aligned));
@@ -370,14 +370,18 @@ export var Puzzle;
             assert(false);
         }
     }
-    Puzzle.twistTo = twistTo;
+    Puzzle.setShift = setShift;
     function snap(puzzle) {
+        const ANGLE_EPS = 1e-8;
         const actions = [];
         for (const sheet of indices(puzzle.states.length)) {
             const state = puzzle.states[sheet];
             if (state.type === StateType.Aligned)
                 continue;
             const turn = Math.round(state.angle / (Math.PI / 3));
+            const err = Math.abs(state.angle - Math.round(state.angle / (Math.PI / 3)) * (Math.PI / 3));
+            if (err > ANGLE_EPS)
+                continue;
             const side = state.type === StateType.LeftShifted;
             const { sheets } = getTwistPieces(puzzle, side, sheet);
             for (const sheet of sheets)
@@ -389,6 +393,10 @@ export var Puzzle;
         return actions;
     }
     Puzzle.snap = snap;
+    function isAligned(puzzle) {
+        return puzzle.states.every(state => state.type === StateType.Aligned);
+    }
+    Puzzle.isAligned = isAligned;
 })(Puzzle || (Puzzle = {}));
 (function (Puzzle) {
     function getTwistCircles(puzzle) {
@@ -1006,7 +1014,7 @@ export var PrincipalPuzzle;
         }
         return { principal, complementary };
     }
-    function twistTo(puzzle, side, sheet, angle) {
+    function setShift(puzzle, side, sheet, angle) {
         const ANGLE_MAX_STEP = Math.PI / 30;
         const twist_pieces = Puzzle.getTwistPieces(puzzle, side, sheet);
         if (twist_pieces === undefined)
@@ -1030,15 +1038,16 @@ export var PrincipalPuzzle;
             .map(i => puzzle.rifts.findIndex(({ left, right }) => left === i || right === i))
             .map(rift_index => rift_index === -1 ? 0 : lean_angle_diffs[rift_index])
             .map((lean_angle_diff, i) => lean_angle_diff - (is_moved[i] ? twist_angle_diff : 0));
+        // TODO: cross branch point
         // TODO: fail for invalid rift crossing
         for (const i of indices(puzzle.branch_cuts.length)) {
             puzzle.branch_cuts[i].cut_angle += cut_angle_diffs[i];
             puzzle.branch_cuts[i].point = moved_points[i];
         }
-        Puzzle.twistTo(puzzle, side, sheets, angle);
+        Puzzle.setShift(puzzle, side, sheets, angle);
         return true;
     }
-    PrincipalPuzzle.twistTo = twistTo;
+    PrincipalPuzzle.setShift = setShift;
     function snap(puzzle) {
         return Puzzle.snap(puzzle);
     }
@@ -1054,6 +1063,7 @@ export var PrincipalPuzzle;
         const [left_angle, right_angle] = HyperbolicPolarCoordinate.getFocusAngles({ offset: offset_, angle });
         const left_angle_diff = left_angle - left_angle0;
         const right_angle_diff = right_angle0 - right_angle;
+        // TODO: cross branch point
         // TODO: fail for invalid rift crossing
         puzzle.rifts[index].coord = { offset: offset_, angle };
         puzzle.branch_cuts[puzzle.rifts[index].left].cut_angle += left_angle_diff;
@@ -1105,10 +1115,10 @@ export var PrincipalPuzzleWithTexture;
         return { images, rifts: clipped_shapes.rifts };
     }
     PrincipalPuzzleWithTexture.calculateClippedImages = calculateClippedImages;
-    function twistTo(puzzle, side, sheet, angle) {
-        return PrincipalPuzzle.twistTo(puzzle, side, sheet, angle);
+    function setShift(puzzle, side, sheet, angle) {
+        return PrincipalPuzzle.setShift(puzzle, side, sheet, angle);
     }
-    PrincipalPuzzleWithTexture.twistTo = twistTo;
+    PrincipalPuzzleWithTexture.setShift = setShift;
     function snap(puzzle) {
         const trans = PrincipalPuzzle.snap(puzzle);
         if (trans.length === 0)

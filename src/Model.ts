@@ -424,7 +424,7 @@ export namespace Puzzle {
   }
   // side = true: left
   // sheets: Puzzle.getTwistPieces(puzzle, side, sheet).sheets
-  export function twistTo(puzzle: Puzzle, side: boolean, sheets: Set<number>, angle: Geo.Angle): void {
+  export function setShift(puzzle: Puzzle, side: boolean, sheets: Set<number>, angle: Geo.Angle): void {
     if (side && Array.from(sheets).every(sheet => puzzle.states[sheet].type !== StateType.RightShifted)) {
       assert(
         Array.from(sheets).every(sheet => puzzle.states[sheet].type === StateType.LeftShifted)
@@ -448,12 +448,16 @@ export namespace Puzzle {
     }
   }
   export function snap(puzzle: Puzzle): {side: boolean, sheets: Set<number>, turn: number}[] {
+    const ANGLE_EPS = 1e-8;
+
     const actions: {side: boolean, sheets: Set<number>, turn: number}[] = [];
 
     for (const sheet of indices(puzzle.states.length)) {
       const state = puzzle.states[sheet];
       if (state.type === StateType.Aligned) continue;
       const turn = Math.round(state.angle / (Math.PI/3));
+      const err = Math.abs(state.angle - Math.round(state.angle / (Math.PI/3)) * (Math.PI/3));
+      if (err > ANGLE_EPS) continue;
       const side = state.type === StateType.LeftShifted;
       const {sheets} = getTwistPieces(puzzle, side, sheet)!;
       for (const sheet of sheets)
@@ -463,6 +467,9 @@ export namespace Puzzle {
       actions.push({side, sheets, turn});
     }
     return actions;
+  }
+  export function isAligned(puzzle: Puzzle): boolean {
+    return puzzle.states.every(state => state.type === StateType.Aligned);
   }
 }
 
@@ -1195,7 +1202,7 @@ export namespace PrincipalPuzzle {
     return { principal, complementary };
   }
 
-  export function twistTo(puzzle: PrincipalPuzzle, side: boolean, sheet: number, angle: Geo.Angle): boolean {
+  export function setShift(puzzle: PrincipalPuzzle, side: boolean, sheet: number, angle: Geo.Angle): boolean {
     const ANGLE_MAX_STEP: Geo.Angle = Math.PI/30;
 
     const twist_pieces = Puzzle.getTwistPieces(puzzle, side, sheet);
@@ -1226,6 +1233,8 @@ export namespace PrincipalPuzzle {
       .map(i => puzzle.rifts.findIndex(({left, right}) => left === i || right === i))
       .map(rift_index => rift_index === -1 ? 0 : lean_angle_diffs[rift_index])
       .map((lean_angle_diff, i) => lean_angle_diff - (is_moved[i] ? twist_angle_diff : 0));
+
+    // TODO: cross branch point
  
     // TODO: fail for invalid rift crossing
     for (const i of indices(puzzle.branch_cuts.length)) {
@@ -1233,7 +1242,7 @@ export namespace PrincipalPuzzle {
       puzzle.branch_cuts[i].point = moved_points[i];
     }
 
-    Puzzle.twistTo(puzzle, side, sheets, angle);
+    Puzzle.setShift(puzzle, side, sheets, angle);
 
     return true;
   }
@@ -1253,6 +1262,8 @@ export namespace PrincipalPuzzle {
     const [left_angle, right_angle] = HyperbolicPolarCoordinate.getFocusAngles({offset:offset_, angle});
     const left_angle_diff = left_angle - left_angle0;
     const right_angle_diff = right_angle0 - right_angle;
+
+    // TODO: cross branch point
     
     // TODO: fail for invalid rift crossing
     puzzle.rifts[index].coord = {offset:offset_, angle};
@@ -1327,8 +1338,8 @@ export namespace PrincipalPuzzleWithTexture {
     return {images, rifts:clipped_shapes.rifts};
   }
 
-  export function twistTo<Image>(puzzle: PrincipalPuzzleWithTexture<Image>, side: boolean, sheet: number, angle: Geo.Angle): boolean {
-    return PrincipalPuzzle.twistTo(puzzle, side, sheet, angle);
+  export function setShift<Image>(puzzle: PrincipalPuzzleWithTexture<Image>, side: boolean, sheet: number, angle: Geo.Angle): boolean {
+    return PrincipalPuzzle.setShift(puzzle, side, sheet, angle);
   }
   export function snap<Image>(puzzle: PrincipalPuzzleWithTexture<Image>): boolean {
     const trans = PrincipalPuzzle.snap(puzzle);
