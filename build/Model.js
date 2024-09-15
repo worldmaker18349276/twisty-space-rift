@@ -880,7 +880,6 @@ export var PrincipalPuzzle;
         // cut ramified pieces
         const prin_shapes = [];
         for (const i of indices(puzzle.ramified.length)) {
-            // TODO: multiple rifts
             const ramified = puzzle.ramified[i];
             const branch_cut = puzzle.branch_cuts[i];
             const rift_index = puzzle.rifts.findIndex(({ left, right }) => left === i || right === i);
@@ -956,9 +955,9 @@ export var PrincipalPuzzle;
             console.warn(`fail to clip path (${n}): cannot find principal part`);
             return undefined;
         }
+        // TODO: determine multiple layers at once
         // grow principal part
         const prin_cutted_shapes = new Set();
-        // TODO: check consistency for prin_shapes
         prin_cutted_shapes.add(prin_shapes[0]);
         const SMALLEST_ANGLE = 0.01;
         for (const path of prin_cutted_shapes) {
