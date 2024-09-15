@@ -415,7 +415,7 @@ export function calculateNearestPoint<T>(path: Path<T>, point: Point): {dis:numb
       distances.push({dis, point: point_});
     }
     {
-      const point_ = getStartPoint(path, 0);
+      const point_ = path.segs[path.segs.length - 1].target;
       const prev_seg = path.segs[mod(- 1, path.segs.length)];
       const prev_dir =
         prev_seg.type === PathSegType.Line ? mul(prev_seg.line.direction, -1)
@@ -902,6 +902,31 @@ export function cutRegion<T, S>(
   assert(order1_indices.size === 0);
 
   return res;
+}
+
+export function flattenCut<T, S>(path: Path<CutSource<CutSource<T, S>, S>>): Path<CutSource<T, S>> {
+  const segs = path.segs.map(seg => {
+    let source: CutSource<T, S>;
+    if (seg.source.type !== CutSourceType.Seg) {
+      source = seg.source;
+    } else {
+      const from =
+        seg.source.from === undefined ?
+            seg.source.ref.source.from
+        : seg.source.ref.source.from === undefined ?
+          seg.source.from
+        : seg.source.ref.source.from + seg.source.from;
+      const to =
+        seg.source.to === undefined ?
+          seg.source.ref.source.to
+        : seg.source.ref.source.from === undefined ?
+          seg.source.to
+        : seg.source.ref.source.from + seg.source.to;
+      source = {...seg.source.ref.source, from, to};
+    }
+    return {...seg, source};
+  });
+  return {...path, segs};
 }
 
 export function hasIncompleteCut<T, S>(path: Path<CutSource<T, S>>, cut: Path<S>): boolean {

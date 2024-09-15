@@ -15,7 +15,7 @@ const RIFT_COLOR = "rgb(30 30 30)";
 const RIFTANGLE_TO_TIME = 100;
 const RIFTOFFSET_TO_TIME = 300;
 const TWIST_DURATION = 300;
-const ROTATE_RIFT_DURATION = 300;
+const FLIP_RIFT_DURATION = 300;
 const WHEEL_TO_RIFTANGLE = -0.001;
 const WHEEL_TO_RIFTOFFSET = 0.001;
 const DRAG_RIFT_RADIUS = 0.3;
@@ -25,6 +25,7 @@ export var PuzzleVariant;
     PuzzleVariant["Dipole2V"] = "Dipole(2) V";
     PuzzleVariant["Dipole3H"] = "Dipole(3) H";
     PuzzleVariant["Dipole3V"] = "Dipole(3) V";
+    PuzzleVariant["Quadrapole3"] = "Quadrapole(3)";
 })(PuzzleVariant || (PuzzleVariant = {}));
 export class SpaceRiftPuzzle {
     constructor(arg) {
@@ -65,6 +66,10 @@ export class SpaceRiftPuzzle {
         }
         else if (variant === PuzzleVariant.Dipole3V) {
             const model = Model.PrincipalPuzzleWithTexture.makeRamifiedDVPuzzle(3, radius, center_x, R, drawComplex);
+            return new SpaceRiftPuzzle({ variant, canvas, model, cs });
+        }
+        else if (variant === PuzzleVariant.Quadrapole3) {
+            const model = Model.PrincipalPuzzleWithTexture.makeRamifiedQPuzzle(3, radius, center_x, R, drawComplex);
             return new SpaceRiftPuzzle({ variant, canvas, model, cs });
         }
         else {
@@ -158,24 +163,26 @@ export class SpaceRiftPuzzle {
             ctx.restore();
         }
         // draw frame
-        if (this.draw_frame) {
+        if (true) {
             ctx.lineWidth = 1;
             ctx.strokeStyle = FRAME_COLOR;
             for (const clipped_image of this.current_images) {
                 const path = clipped_image.region;
-                const hide = path.segs.map(seg => seg.source.type !== Geo.CutSourceType.Seg
-                    || seg.source.ref.source.auxiliary);
-                ctx.stroke(Draw.toCanvasPath(this.cs, path, hide));
+                // const hide = path.segs.map(seg =>
+                //   seg.source.type !== Geo.CutSourceType.Seg
+                //   || seg.source.ref.source.auxiliary
+                // );
+                ctx.stroke(Draw.toCanvasPath(this.cs, path));
             }
             // for (const [_piece, path] of Model.PrincipalPuzzle.calculateShapes(this.model.puzzle)) {
             //   const hide = path.segs.map(seg => seg.source.auxiliary);
             //   ctx.stroke(Draw.toCanvasPath(this.cs, path, hide));
             // }
         }
-        ctx.lineWidth = 3;
-        ctx.strokeStyle = RIFT_COLOR;
-        for (const rift of this.current_rifts)
-            ctx.stroke(Draw.toCanvasPath(this.cs, rift));
+        // ctx.lineWidth = 3;
+        // ctx.strokeStyle = RIFT_COLOR;
+        // for (const rift of this.current_rifts)
+        //   ctx.stroke(Draw.toCanvasPath(this.cs, rift));
         // // for debug
         // ctx.fillStyle = "white";
         // ctx.font = "26px serif";
@@ -259,35 +266,84 @@ export class SpaceRiftPuzzle {
     }
     registerController() {
         let dragging_rift_index = undefined;
+        const is_dragging_rift = () => dragging_rift_index !== undefined;
+        const start_dragging_rift = (point) => {
+            const rift_points = this.model.rifts.map(rift => Model.HyperbolicPolarCoordinate.getHyperbolaPoint(this.model.branch_cuts[rift.left].point, this.model.branch_cuts[rift.right].point, rift.coord));
+            const drag_rift_index = rift_points.findIndex(rift_point => rift_point[1]
+                && Geo.norm(Geo.sub(rift_point[0], point)) <= DRAG_RIFT_RADIUS);
+            if (drag_rift_index !== -1) {
+                dragging_rift_index = drag_rift_index;
+                return true;
+            }
+            return false;
+        };
+        const cancel_dragging_rift = () => {
+            dragging_rift_index = undefined;
+        };
+        const drag_rift_to_if_is_dragging = (point) => {
+            if (dragging_rift_index !== undefined)
+                this.tearToImmediately(dragging_rift_index, point);
+        };
+        let scrolling_rift_index = undefined;
+        const find_nearest_rift = (point) => {
+            if (scrolling_rift_index === undefined)
+                scrolling_rift_index = this.current_rifts
+                    .map((rift, index) => ({ dis: Math.abs(Geo.calculateNearestPoint(rift, point).dis), index }))
+                    .reduce((a, b) => a.dis < b.dis ? a : b)
+                    .index;
+            return scrolling_rift_index;
+        };
+        const scroll_rift = (point, dx, dy) => {
+            const rift_index = find_nearest_rift(point);
+            this.tear(rift_index, this.model.rifts[rift_index].coord.angle - WHEEL_TO_RIFTANGLE * dy, this.model.rifts[rift_index].coord.offset - WHEEL_TO_RIFTOFFSET * dx);
+        };
+        const flip_rift = (point) => {
+            const rift_index = find_nearest_rift(point);
+            this.tear(rift_index, this.model.rifts[rift_index].coord.angle + Math.PI * 2, this.model.rifts[rift_index].coord.offset, FLIP_RIFT_DURATION);
+        };
+        const cancel_scrolling_rift = () => {
+            scrolling_rift_index = undefined;
+        };
+        const twist = (point, forward) => {
+            const [left_circle, right_circle] = Model.Puzzle.getTwistCircles(this.model);
+            const left_dis = Geo.norm(Geo.sub(left_circle.center, point));
+            const right_dis = Geo.norm(Geo.sub(right_circle.center, point));
+            if (left_dis > this.model.radius && right_dis > this.model.radius)
+                return;
+            const side = left_dis < right_dis;
+            const piece = this.pointTo(point);
+            if (piece === undefined)
+                return;
+            const sheet = indices(this.model.stands.length)
+                .find(sheet => { var _a, _b; return (_b = (_a = Model.Puzzle.getTwistPieces(this.model, side, sheet)) === null || _a === void 0 ? void 0 : _a.pieces.has(piece)) !== null && _b !== void 0 ? _b : false; });
+            if (sheet === undefined)
+                return;
+            const turn = forward ? 1 : -1;
+            this.twist(side, sheet, turn);
+        };
+        const inspect = (point) => {
+            const piece = this.pointTo(point);
+            console.log(piece);
+            this.control_state = { type: PuzzleControlStateType.Updated };
+        };
         this.canvas.addEventListener("wheel", event => {
             event.preventDefault();
-            if (dragging_rift_index !== undefined)
-                return;
             if (this.current_rifts.length === 0)
                 return;
             if (this.current_images.size === 0)
                 return;
+            if (is_dragging_rift())
+                return;
             const point = this.getPosition(event);
-            const rift_index = this.current_rifts
-                .map((rift, index) => ({ dis: Math.abs(Geo.calculateNearestPoint(rift, point).dis), index }))
-                .reduce((a, b) => a.dis < b.dis ? a : b)
-                .index;
-            if (event.shiftKey) {
-                this.tear(rift_index, this.model.rifts[rift_index].coord.angle, this.model.rifts[rift_index].coord.offset + WHEEL_TO_RIFTOFFSET * event.deltaY);
-            }
-            else {
-                this.tear(rift_index, this.model.rifts[rift_index].coord.angle + WHEEL_TO_RIFTANGLE * event.deltaY, this.model.rifts[rift_index].coord.offset);
-            }
+            scroll_rift(point, event.deltaX, event.deltaY);
         }, false);
         this.canvas.addEventListener("contextmenu", event => event.preventDefault(), false);
         this.canvas.addEventListener("mousedown", event => {
             event.preventDefault();
-            if (dragging_rift_index !== undefined)
+            if (is_dragging_rift())
                 return;
             if (event.button === 0 && event.ctrlKey) {
-                const piece = this.pointTo(this.getPosition(event));
-                console.log(piece);
-                this.control_state = { type: PuzzleControlStateType.Updated };
+                inspect(this.getPosition(event));
                 return;
             }
             if (this.current_rifts.length === 0)
@@ -296,51 +352,28 @@ export class SpaceRiftPuzzle {
                 return;
             const point = this.getPosition(event);
             if (event.button === 1) {
-                const rift_index = this.current_rifts
-                    .map((rift, index) => ({ dis: Math.abs(Geo.calculateNearestPoint(rift, point).dis), index }))
-                    .reduce((a, b) => a.dis < b.dis ? a : b)
-                    .index;
-                this.tear(rift_index, this.model.rifts[rift_index].coord.angle + Math.PI * 2, this.model.rifts[rift_index].coord.offset, ROTATE_RIFT_DURATION);
+                flip_rift(point);
                 return;
             }
-            const rift_points = this.model.rifts.map(rift => Model.HyperbolicPolarCoordinate.getHyperbolaPoint(this.model.branch_cuts[rift.left].point, this.model.branch_cuts[rift.right].point, rift.coord));
-            const drag_rift_index = rift_points.findIndex(rift_point => rift_point[1]
-                && Geo.norm(Geo.sub(rift_point[0], point)) <= DRAG_RIFT_RADIUS);
-            if (dragging_rift_index === undefined && event.button === 0 && drag_rift_index !== -1) {
-                dragging_rift_index = drag_rift_index;
+            if (!is_dragging_rift() && event.button === 0 && start_dragging_rift(point)) {
                 return;
             }
             if (event.button === 0 || event.button === 2) {
-                const [left_circle, right_circle] = Model.Puzzle.getTwistCircles(this.model);
-                const left_dis = Geo.norm(Geo.sub(left_circle.center, point));
-                const right_dis = Geo.norm(Geo.sub(right_circle.center, point));
-                if (left_dis > this.model.radius && right_dis > this.model.radius)
-                    return;
-                const side = left_dis < right_dis;
-                const piece = this.pointTo(point);
-                if (piece === undefined)
-                    return;
-                const sheet = indices(this.model.stands.length)
-                    .find(sheet => { var _a, _b; return (_b = (_a = Model.Puzzle.getTwistPieces(this.model, side, sheet)) === null || _a === void 0 ? void 0 : _a.pieces.has(piece)) !== null && _b !== void 0 ? _b : false; });
-                if (sheet === undefined)
-                    return;
-                const turn = event.button === 0 ? 1 : -1;
-                this.twist(side, sheet, turn);
+                twist(point, event.button === 0);
                 return;
             }
         }, false);
         this.canvas.addEventListener("mousemove", event => {
-            if (dragging_rift_index === undefined)
-                return;
             if (this.current_rifts.length === 0)
                 return;
             if (this.current_images.size === 0)
                 return;
+            cancel_scrolling_rift();
             const point = this.getPosition(event);
-            this.tearToImmediately(dragging_rift_index, point);
+            drag_rift_to_if_is_dragging(point);
         }, false);
-        this.canvas.addEventListener("mouseup", event => { dragging_rift_index = undefined; }, false);
-        this.canvas.addEventListener("mouseleave", event => { dragging_rift_index = undefined; }, false);
+        this.canvas.addEventListener("mouseup", event => cancel_dragging_rift(), false);
+        this.canvas.addEventListener("mouseleave", event => cancel_dragging_rift(), false);
     }
     registerRenderEvent() {
         let counter = 0;

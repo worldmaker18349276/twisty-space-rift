@@ -347,7 +347,7 @@ export function calculateNearestPoint(path, point) {
             distances.push({ dis, point: point_ });
         }
         {
-            const point_ = getStartPoint(path, 0);
+            const point_ = path.segs[path.segs.length - 1].target;
             const prev_seg = path.segs[mod(-1, path.segs.length)];
             const prev_dir = prev_seg.type === PathSegType.Line ? mul(prev_seg.line.direction, -1)
                 : mul(normalize(rot90(sub(point_, prev_seg.circle.center))), -Math.sign(prev_seg.circle.radius));
@@ -701,6 +701,29 @@ export function cutRegion(path, cut, cond) {
     }
     assert(order1_indices.size === 0);
     return res;
+}
+export function flattenCut(path) {
+    const segs = path.segs.map(seg => {
+        let source;
+        if (seg.source.type !== CutSourceType.Seg) {
+            source = seg.source;
+        }
+        else {
+            const from = seg.source.from === undefined ?
+                seg.source.ref.source.from
+                : seg.source.ref.source.from === undefined ?
+                    seg.source.from
+                    : seg.source.ref.source.from + seg.source.from;
+            const to = seg.source.to === undefined ?
+                seg.source.ref.source.to
+                : seg.source.ref.source.from === undefined ?
+                    seg.source.to
+                    : seg.source.ref.source.from + seg.source.to;
+            source = { ...seg.source.ref.source, from, to };
+        }
+        return { ...seg, source };
+    });
+    return { ...path, segs };
 }
 export function hasIncompleteCut(path, cut) {
     assert(path.is_closed);

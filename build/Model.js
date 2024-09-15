@@ -59,6 +59,7 @@ export var PuzzleType;
     PuzzleType[PuzzleType["Normal"] = 0] = "Normal";
     PuzzleType[PuzzleType["Ramified_DH"] = 1] = "Ramified_DH";
     PuzzleType[PuzzleType["Ramified_DV"] = 2] = "Ramified_DV";
+    PuzzleType[PuzzleType["Ramified_Q"] = 3] = "Ramified_Q";
 })(PuzzleType || (PuzzleType = {}));
 export var Puzzle;
 (function (Puzzle) {
@@ -291,12 +292,12 @@ export var Puzzle;
         const layers = indices(n).map(i => makePieces(`_${i}`));
         const piece50Ls = layers.map(layer => Edge.walk(layer.stands[0], [0, 1, -1, 1, 0]).aff);
         const pieceCLs = layers.map(layer => Edge.walk(layer.stands[0], [0, 1, -1, 1]).aff);
-        const pieceCRs = rotate(layers, 1).map(layer => Edge.walk(layer.stands[0], [0, 1, -1, -1]).aff).reverse();
+        const pieceCRs = layers.map(layer => Edge.walk(layer.stands[0], [0, 1, -1, -1]).aff);
         // ramify center pieces
         // ramified_pieceCLs[0].edges[1]: the edge from the bottom sheet to the top sheet
         const ramified_pieceCLs = chunkPiece("CL", ramifyPiece("", pieceCLs, 0), 2);
         // ramified_pieceCRs[0].edges[1]: the edge from the second sheet to the top sheet
-        const ramified_pieceCRs = chunkPiece("CR", ramifyPiece("", pieceCRs, 0), 2);
+        const ramified_pieceCRs = chunkPiece("CR", ramifyPiece("", rotate(pieceCRs, 1).reverse(), 0), 2);
         // piece50Ls[0].edges[0]: the edge from the second sheet to the top sheet
         swapAdj(...piece50Ls.map(piece => piece.edges[0]));
         swapAdj(...piece50Ls.map(piece => piece.edges[3]));
@@ -310,16 +311,16 @@ export var Puzzle;
             ramified: [{ pieces: ramified_pieceCLs, turn: n }, { pieces: ramified_pieceCRs, turn: n }],
         };
     }
-    function makeRamifiednDVPieces(n) {
+    function makeRamifiedDVPieces(n) {
         const layers = indices(n).map(i => makePieces(`_${i}`));
         const piece50Ls = layers.map(layer => Edge.walk(layer.stands[0], [0, 1, -1, 1, 0]).aff);
         const piece0Ls = layers.map(layer => Edge.walk(layer.stands[0], [0, 1]).aff);
-        const piece0Rs = rotate(layers, 1).map(layer => Edge.walk(layer.stands[0], [0, 1, -1, 2]).aff).reverse();
-        // ramify center pieces
+        const piece0Rs = layers.map(layer => Edge.walk(layer.stands[0], [0, 1, -1, 2]).aff);
+        // ramify corner pieces
         // ramified_piece0Ls[0].edges[1]: the edge from the bottom sheet to the top sheet
         const ramified_piece0Ls = chunkPiece("0L", ramifyPiece("", piece0Ls, 0), 1);
         // ramified_piece0Rs[0].edges[1]: the edge from the second sheet to the top sheet
-        const ramified_piece0Rs = chunkPiece("0R", ramifyPiece("", piece0Rs, 0), 1);
+        const ramified_piece0Rs = chunkPiece("0R", ramifyPiece("", rotate(piece0Rs, 1).reverse(), 0), 1);
         // piece50Ls[0].edges[3]: the edge from the second sheet to the top sheet
         swapAdj(...piece50Ls.map(piece => piece.edges[3]));
         swapAdj(...piece50Ls.map(piece => piece.edges[2]));
@@ -331,6 +332,46 @@ export var Puzzle;
             pieces,
             stands: layers.flatMap(layer => layer.stands),
             ramified: [{ pieces: ramified_piece0Ls, turn: n }, { pieces: ramified_piece0Rs, turn: n }],
+        };
+    }
+    function makeRamifiedQPieces(n) {
+        const layers = indices(n).map(i => makePieces(`_${i}`));
+        const piece50Ls = layers.map(layer => Edge.walk(layer.stands[0], [0, 1, -1, 1, 0]).aff);
+        const pieceCLs = layers.map(layer => Edge.walk(layer.stands[0], [0, 1, -1, 1]).aff);
+        const pieceCRs = layers.map(layer => Edge.walk(layer.stands[0], [0, 1, -1, -1]).aff);
+        const piece0Ls = layers.map(layer => Edge.walk(layer.stands[0], [0, 1]).aff);
+        const piece0Rs = layers.map(layer => Edge.walk(layer.stands[0], [0, 1, -1, 2]).aff);
+        // ramify center pieces
+        // ramified_pieceCLs[0].edges[1]: the edge from the bottom sheet to the top sheet
+        const ramified_pieceCLs = chunkPiece("CL", ramifyPiece("", pieceCLs, 0), 2);
+        // ramified_pieceCRs[0].edges[1]: the edge from the second sheet to the top sheet
+        const ramified_pieceCRs = chunkPiece("CR", ramifyPiece("", rotate(pieceCRs, 1).reverse(), 0), 2);
+        // ramify corner pieces
+        // ramified_piece0Ls[0].edges[1]: the edge from the bottom sheet to the top sheet
+        const ramified_piece0Ls = chunkPiece("0L", ramifyPiece("", piece0Ls, 0), 1);
+        // ramified_piece0Rs[0].edges[1]: the edge from the second sheet to the top sheet
+        const ramified_piece0Rs = chunkPiece("0R", ramifyPiece("", rotate(piece0Rs, 1).reverse(), 0), 1);
+        // piece50Ls[0].edges[0]: the edge from the top sheet to the bottom sheet
+        // piece50Ls[0].edges[1]: the edge from the bottom sheet to the top sheet
+        // piece50Ls[0].edges[2]: the edge from the top sheet to the second sheet
+        // piece50Ls[0].edges[3]: the edge from the second sheet to the top sheet
+        swapAdj(...piece50Ls.map(piece => piece.edges[1]).reverse());
+        swapAdj(...piece50Ls.map(piece => piece.edges[3]));
+        const pieces = layers.flatMap(layer => layer.pieces)
+            .filter(p => !pieceCLs.includes(p) && !pieceCRs.includes(p) && !piece0Ls.includes(p) && !piece0Rs.includes(p))
+            .concat(ramified_pieceCLs)
+            .concat(ramified_pieceCRs)
+            .concat(ramified_piece0Ls)
+            .concat(ramified_piece0Rs);
+        return {
+            pieces,
+            stands: layers.flatMap(layer => layer.stands),
+            ramified: [
+                { pieces: ramified_pieceCLs, turn: n },
+                { pieces: ramified_pieceCRs, turn: n },
+                { pieces: ramified_piece0Ls, turn: n },
+                { pieces: ramified_piece0Rs, turn: n },
+            ],
         };
     }
     function ckeckPuzzleShape(radius, center_x, R) {
@@ -372,7 +413,7 @@ export var Puzzle;
     Puzzle.makeRamifiedDHPuzzle = makeRamifiedDHPuzzle;
     function makeRamifiedDVPuzzle(turn, radius, center_x, R) {
         ckeckPuzzleShape(radius, center_x, R);
-        const { pieces, stands, ramified } = makeRamifiednDVPieces(turn);
+        const { pieces, stands, ramified } = makeRamifiedDVPieces(turn);
         return {
             type: PuzzleType.Ramified_DH,
             pieces,
@@ -385,6 +426,21 @@ export var Puzzle;
         };
     }
     Puzzle.makeRamifiedDVPuzzle = makeRamifiedDVPuzzle;
+    function makeRamifiedQPuzzle(turn, radius, center_x, R) {
+        ckeckPuzzleShape(radius, center_x, R);
+        const { pieces, stands, ramified } = makeRamifiedQPieces(turn);
+        return {
+            type: PuzzleType.Ramified_Q,
+            pieces,
+            stands,
+            ramified,
+            states: indices(stands.length).map(_ => ({ type: StateType.Aligned })),
+            radius,
+            center_x,
+            R,
+        };
+    }
+    Puzzle.makeRamifiedQPuzzle = makeRamifiedQPuzzle;
     // side = true: left
     function getTwistEdges(puzzle, side, sheet) {
         const edge0 = side ? edgeAt(puzzle, sheet, [-1, -1, -2, -1, 0])
@@ -852,6 +908,23 @@ export var PrincipalPuzzle;
         };
     }
     PrincipalPuzzle.makeRamifiedDVPuzzle = makeRamifiedDVPuzzle;
+    function makeRamifiedQPuzzle(turn, radius, center_x, R) {
+        const puzzle = Puzzle.makeRamifiedQPuzzle(turn, radius, center_x, R);
+        return {
+            ...puzzle,
+            branch_cuts: [
+                { point: [-center_x, 0], cut_angle: Math.PI / 6, principal: 0 },
+                { point: [center_x, 0], cut_angle: Math.PI / 6, principal: 0 },
+                { point: [0, center_x / Math.sqrt(3)], cut_angle: Math.PI / 3, principal: 0 },
+                { point: [0, -center_x / Math.sqrt(3)], cut_angle: Math.PI / 3, principal: 0 },
+            ],
+            rifts: [
+                { left: 0, right: 1, coord: { offset: 0.0, angle: 0.0 } },
+                { left: 2, right: 3, coord: { offset: 0.0, angle: 0.0 } },
+            ],
+        };
+    }
+    PrincipalPuzzle.makeRamifiedQPuzzle = makeRamifiedQPuzzle;
     function calculateRiftShape(puzzle, shapes, rift) {
         const left_point = Geo.getStartPoint(shapes.get(puzzle.ramified[rift.left].pieces[0]));
         const right_point = Geo.getStartPoint(shapes.get(puzzle.ramified[rift.right].pieces[0]));
@@ -937,28 +1010,48 @@ export var PrincipalPuzzle;
         const POS_EPS = 1e-3;
         const cutted_shapes = new Map();
         // cut normal pieces
+        function cut(shape, rift_shape, name) {
+            const res = Geo.cutRegion(shape, rift_shape);
+            if (res === undefined) {
+                console.warn(`fail to clip path (${n}): fail to cut piece ${name}`);
+                return undefined;
+            }
+            // TODO: incomplete cut
+            if (res.some(path => Geo.hasIncompleteCut(path, rift_shape))) {
+                console.warn(`fail to clip path (${n}): fail to cut piece ${name}`);
+                return undefined;
+            }
+            return res;
+        }
         for (const [piece, shape] of shapes) {
             if (piece.type === PieceType.InfPiece)
                 continue;
             if (puzzle.ramified.some(ramified => ramified.pieces.includes(piece)))
                 continue;
-            // TODO: multiple rifts
-            const rift_shape = rift_shapes[0];
-            const res = Geo.cutRegion(shape, rift_shape);
-            if (res === undefined) {
-                console.warn(`fail to clip path (${n}): fail to cut normal piece ${piece.name}`);
-                return undefined;
-            }
-            // TODO: incomplete cut
-            if (res.some(path => Geo.hasIncompleteCut(path, rift_shape))) {
-                console.warn(`fail to clip path (${n}): fail to cut normal piece ${piece.name}`);
-                return undefined;
+            let res;
+            for (const i of indices(rift_shapes.length)) {
+                const rift_shape = rift_shapes[i];
+                if (i === 0) {
+                    const res_ = cut(shape, rift_shape, piece.name);
+                    if (res_ === undefined) {
+                        return undefined;
+                    }
+                    res = res_;
+                }
+                else {
+                    const ress = res.map(subshape => cut(subshape, rift_shape, piece.name));
+                    if (ress.some(subshapes => subshapes === undefined)) {
+                        return undefined;
+                    }
+                    res = ress.flatMap(subshapes => subshapes).map(subshape => Geo.flattenCut(subshape));
+                }
             }
             append(cutted_shapes, piece, res);
         }
         // cut ramified pieces
         const prin_shapes = [];
         for (const i of indices(puzzle.ramified.length)) {
+            // TODO: multiple rifts
             const ramified = puzzle.ramified[i];
             const branch_cut = puzzle.branch_cuts[i];
             const rift_index = puzzle.rifts.findIndex(({ left, right }) => left === i || right === i);
@@ -991,18 +1084,29 @@ export var PrincipalPuzzle;
             for (const index of indices(ramified.pieces.length)) {
                 const piece = ramified.pieces[index];
                 const shape = shapes.get(piece);
-                const res = Geo.cutRegion(shape, rift_shape, {
+                const res0 = Geo.cutRegion(shape, rift_shape, {
                     index_of_path: 0,
                     incident_with_cut_start_or_end: rift_side,
                     considered_as_incident: ramified_piece_indices.includes(index),
                 });
-                if (res === undefined) {
+                if (res0 === undefined) {
                     console.warn(`fail to clip path (${n}): fail to cut ramified piece: ${piece.name}`);
                     return undefined;
                 }
-                if (res.some(path => Geo.hasIncompleteCut(path, rift_shape))) {
+                if (res0.some(path => Geo.hasIncompleteCut(path, rift_shape))) {
                     console.warn(`fail to clip path (${n}): fail to cut ramified piece ${piece.name}`);
                     return undefined;
+                }
+                let res = res0;
+                for (const i of indices(rift_shapes.length)) {
+                    if (i === rift_index)
+                        continue;
+                    const rift_shape = rift_shapes[i];
+                    const ress = res.map(subshape => cut(subshape, rift_shape, piece.name));
+                    if (ress.some(subshapes => subshapes === undefined)) {
+                        return undefined;
+                    }
+                    res = ress.flatMap(subshapes => subshapes).map(subshape => Geo.flattenCut(subshape));
                 }
                 append(cutted_shapes, piece, res);
                 if (branch_cut.principal !== undefined && index === ramified_piece_indices[branch_cut.principal]) {
@@ -1130,7 +1234,7 @@ export var PrincipalPuzzle;
     }
     PrincipalPuzzle.setRift = setRift;
 })(PrincipalPuzzle || (PrincipalPuzzle = {}));
-var Textures;
+export var Textures;
 (function (Textures) {
     function getDHTextureFunction(puzzle, turn, scale) {
         const d = puzzle.center_x;
@@ -1152,13 +1256,13 @@ var Textures;
         return fns;
     }
     Textures.getDVTextureFunction = getDVTextureFunction;
-    function getQTextureFunction(puzzle, scale) {
+    function getQTextureFunction(puzzle, turn, scale) {
         const d1 = puzzle.center_x;
         const d2 = puzzle.center_x / Math.sqrt(3);
         const fns = [];
-        for (const i of indices(2)) {
-            fns.push((z) => Complex.mul(Complex.conjugate(Complex.pow(Complex.add(z, Complex.c(+d1, 0)), 1 / 2)), Complex.pow(Complex.add(z, Complex.c(-d1, 0)), 1 / 2), Complex.pow(Complex.add(Complex.mul(z, Complex.c(0, +1)), Complex.c(+d2, 0)), 1 / 2), Complex.pow(Complex.add(Complex.mul(z, Complex.c(0, +1)), Complex.c(-d2, 0)), 1 / 2), Complex.omega(i / 2), Complex.c(scale, 0)));
-            fns.push((z) => Complex.mul(Complex.conjugate(Complex.pow(Complex.add(z, Complex.c(+d1, 0)), 1 / 2)), Complex.pow(Complex.mul(Complex.add(z, Complex.c(-1, 0)), Complex.c(-d1, 0)), 1 / 2), Complex.pow(Complex.add(Complex.mul(z, Complex.c(0, +1)), Complex.c(+d2, 0)), 1 / 2), Complex.pow(Complex.mul(Complex.c(-1, 0), Complex.add(Complex.mul(z, Complex.c(0, +1)), Complex.c(-d2, 0))), 1 / 2), Complex.omega((i + 1) / 2), Complex.c(scale, 0)));
+        for (const i of indices(turn)) {
+            fns.push((z) => Complex.mul(Complex.pow(Complex.add(z, Complex.c(+d1, 0)), 1 / turn), Complex.pow(Complex.add(z, Complex.c(-d1, 0)), (turn - 1) / turn), Complex.pow(Complex.add(Complex.mul(z, Complex.c(0, +1)), Complex.c(+d2, 0)), 1 / turn), Complex.pow(Complex.add(Complex.mul(z, Complex.c(0, +1)), Complex.c(-d2, 0)), (turn - 1) / turn), Complex.omega(i / turn), Complex.c(scale, 0)));
+            fns.push((z) => Complex.mul(Complex.pow(Complex.add(z, Complex.c(+d1, 0)), 1 / turn), Complex.pow(Complex.mul(Complex.add(z, Complex.c(-1, 0)), Complex.c(-d1, 0)), (turn - 1) / turn), Complex.pow(Complex.add(Complex.mul(z, Complex.c(0, +1)), Complex.c(+d2, 0)), 1 / turn), Complex.pow(Complex.mul(Complex.c(-1, 0), Complex.add(Complex.mul(z, Complex.c(0, +1)), Complex.c(-d2, 0))), (turn - 1) / turn), Complex.omega((i + 1) / turn), Complex.c(scale, 0)));
         }
         return fns;
     }
@@ -1249,6 +1353,43 @@ export var PrincipalPuzzleWithTexture;
         };
     }
     PrincipalPuzzleWithTexture.makeRamifiedDVPuzzle = makeRamifiedDVPuzzle;
+    function makeRamifiedQPuzzle(turn, radius, center_x, R, draw_image, scale = 1) {
+        const puzzle = PrincipalPuzzle.makeRamifiedQPuzzle(turn, radius, center_x, R);
+        const textures = Textures.getQTextureFunction(puzzle, turn, scale).map(draw_image);
+        const unshifted_positions = new Map(puzzle.pieces.map(piece => [piece, Geo.id_trans()]));
+        const texture_indices = new Map();
+        for (const sheet of indices(puzzle.stands.length)) {
+            const texture_index = mod(2 * sheet - 3, 2 * turn);
+            const edge = Puzzle.edgeAt(puzzle, sheet, [0, 1, -1]);
+            texture_indices.set(edge.aff, texture_index);
+            texture_indices.set(Edge.walk(edge, [0]).aff, texture_index);
+            texture_indices.set(Edge.walk(edge, [1]).aff, texture_index);
+            texture_indices.set(Edge.walk(edge, [2]).aff, texture_index);
+            texture_indices.set(Edge.walk(edge, [3]).aff, texture_index);
+        }
+        for (const sheet of indices(puzzle.stands.length)) {
+            const layer = new Set();
+            layer.add(Puzzle.edgeAt(puzzle, sheet, []).aff);
+            for (const piece of layer) {
+                for (const edge of piece.edges) {
+                    const adj_piece = edge.adj.aff;
+                    if (adj_piece.type !== PieceType.InfPiece && !texture_indices.has(adj_piece)) {
+                        layer.add(adj_piece);
+                    }
+                }
+            }
+            for (const piece of layer) {
+                texture_indices.set(piece, 2 * sheet);
+            }
+        }
+        return {
+            ...puzzle,
+            unshifted_positions,
+            texture_indices,
+            textures,
+        };
+    }
+    PrincipalPuzzleWithTexture.makeRamifiedQPuzzle = makeRamifiedQPuzzle;
     function getPositions(puzzle) {
         const positions = new Map(puzzle.unshifted_positions);
         for (const trans of Puzzle.getShiftTransformations(puzzle)) {
