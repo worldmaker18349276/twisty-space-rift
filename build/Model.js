@@ -815,11 +815,11 @@ export var PrincipalPuzzle;
     function calculateClippedShapes(puzzle) {
         const shapes = Puzzle.calculateShapes(puzzle);
         const rift_shapes = puzzle.rifts.map(rift => calculateRiftShape(puzzle, shapes, rift));
-        let res = calculateClippedShapes_(puzzle, shapes, rift_shapes, 0);
+        let layers = calculateClippedShapes_(puzzle, shapes, rift_shapes, 0);
         const RETRY = 5;
         const PERTURBATION = 1e-4;
         for (const n of indices(RETRY)) {
-            if (res !== undefined)
+            if (layers !== undefined)
                 break;
             const perturbation = {
                 angle: (Math.random() - 0.5) * PERTURBATION,
@@ -836,11 +836,11 @@ export var PrincipalPuzzle;
             }));
             // console.warn(`fail to calculate clipped shapes, try again with perturbation (${n})`, perturbation);
             const rift_shapes = perturb_rifts.map(rift => calculateRiftShape(puzzle, shapes, rift));
-            res = calculateClippedShapes_(puzzle, shapes, rift_shapes, n + 1);
+            layers = calculateClippedShapes_(puzzle, shapes, rift_shapes, n + 1);
         }
-        if (res === undefined)
+        if (layers === undefined)
             return undefined;
-        return { ...res, rifts: rift_shapes };
+        return { layers, rifts: rift_shapes };
     }
     PrincipalPuzzle.calculateClippedShapes = calculateClippedShapes;
     function calculateRiftAngle(puzzle, shapes, rift_shapes, index) {
@@ -901,7 +901,7 @@ export var PrincipalPuzzle;
             append(cutted_shapes, piece, res);
         }
         // cut ramified pieces
-        const prin_shapes = [];
+        const seeds = indices(puzzle.stands.length).map(_ => []);
         for (const i of indices(puzzle.ramified.length)) {
             const ramified = puzzle.ramified[i];
             const branch_cut = puzzle.branch_points[i];
@@ -963,31 +963,26 @@ export var PrincipalPuzzle;
                     res = ress.flatMap(subshapes => subshapes).map(subshape => Geo.flattenCut(subshape));
                 }
                 append(cutted_shapes, piece, res);
-                const ramified_piece_index = zip(ramified_piece_indices, branch_cut.order).find(([, ord]) => ord === 0)[0];
-                if (index === ramified_piece_index) {
-                    const prin_shape0 = rift_side ?
-                        res.find(path => path.segs.some(seg => seg.source.type === Geo.CutSourceType.LeftCut
-                            && seg.source.ref === rift_shape.segs[0]
-                            && seg.source.from === 0))
-                        :
-                            res.find(path => path.segs.some(seg => seg.source.type === Geo.CutSourceType.RightCut
-                                && seg.source.ref === rift_shape.segs[rift_shape.segs.length - 1]
-                                && seg.source.to === seg.source.ref.len));
-                    if (prin_shape0 !== undefined)
-                        prin_shapes.push(prin_shape0);
+                for (const [ramified_piece_index, layer_index] of zip(ramified_piece_indices, branch_cut.order)) {
+                    if (index === ramified_piece_index) {
+                        const seed_shape0 = rift_side ?
+                            res.find(path => path.segs.some(seg => seg.source.type === Geo.CutSourceType.LeftCut
+                                && seg.source.ref === rift_shape.segs[0]
+                                && seg.source.from === 0))
+                            :
+                                res.find(path => path.segs.some(seg => seg.source.type === Geo.CutSourceType.RightCut
+                                    && seg.source.ref === rift_shape.segs[rift_shape.segs.length - 1]
+                                    && seg.source.to === seg.source.ref.len));
+                        if (seed_shape0 !== undefined)
+                            seeds[layer_index].push(seed_shape0);
+                    }
                 }
             }
         }
-        if (prin_shapes.length === 0) {
-            console.warn(`fail to clip path (${n}): cannot find principal part`);
-            return undefined;
-        }
-        // TODO: determine multiple layers at once
-        // grow principal part
-        const prin_cutted_shapes = new Set();
-        prin_cutted_shapes.add(prin_shapes[0]);
+        // TODO: determine layers cross cut
+        const cutted_shapes_layer = new Map(seeds.flatMap((seeds, layer_index) => seeds.map(shape => [shape, layer_index])));
         const SMALLEST_ANGLE = 0.01;
-        for (const path of prin_cutted_shapes) {
+        for (const [path, layer_index] of cutted_shapes_layer) {
             for (const seg of path.segs) {
                 if (seg.source.type !== Geo.CutSourceType.Seg)
                     continue;
@@ -1012,26 +1007,36 @@ export var PrincipalPuzzle;
                             const adj_to_ = Math.min((_d = adj_seg.source.to) !== null && _d !== void 0 ? _d : seg.source.ref.len, adj_to);
                             if (adj_to_ - adj_from_ < SMALLEST_ANGLE)
                                 continue;
-                            prin_cutted_shapes.add(adj_path);
+                            if (cutted_shapes_layer.has(adj_path)) {
+                                assert(cutted_shapes_layer.get(adj_path) === layer_index);
+                            }
+                            else {
+                                cutted_shapes_layer.set(adj_path, layer_index);
+                            }
                             break;
                         }
                     }
                 }
             }
         }
-        const principal = new Map();
-        const complementary = new Map();
+        let unclassified = new Set();
+        const layers = indices(puzzle.stands.length)
+            .map(_ => new Map());
         for (const [piece, paths] of cutted_shapes) {
             for (const path of paths) {
-                if (prin_cutted_shapes.has(path)) {
-                    append(principal, piece, [path]);
+                if (cutted_shapes_layer.has(path)) {
+                    const layer_index = cutted_shapes_layer.get(path);
+                    append(layers[layer_index], piece, [path]);
                 }
                 else {
-                    append(complementary, piece, [path]);
+                    unclassified.add(path);
                 }
             }
         }
-        return { principal, complementary };
+        if (unclassified.size > 0) {
+            console.warn(`fail to clip path (${n}): ${unclassified.size} shapes are not classified into any layer`);
+        }
+        return layers;
     }
     function setShift(puzzle, side, sheet, angle) {
         const ANGLE_MAX_STEP = Math.PI / 30;
@@ -1154,7 +1159,7 @@ export var PrincipalPuzzleWithTexture;
         if (clipped_shapes === undefined)
             return undefined;
         const images = new Set();
-        for (const [piece, shapes] of clipped_shapes.principal) {
+        for (const [piece, shapes] of clipped_shapes.layers[0]) {
             for (const shape of shapes) {
                 images.add({
                     image: puzzle.textures[puzzle.texture_indices.get(piece)],

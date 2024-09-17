@@ -960,17 +960,16 @@ export namespace PrincipalPuzzle {
   export function calculateClippedShapes(
     puzzle: PrincipalPuzzle,
   ): {
-    principal: Map<Piece, Geo.Path<Geo.CutSource<Edge, undefined>>[]>,
-    complementary: Map<Piece, Geo.Path<Geo.CutSource<Edge, undefined>>[]>,
+    layers: Map<Piece, Geo.Path<Geo.CutSource<Edge, undefined>>[]>[],
     rifts: Geo.Path<undefined>[],
   } | undefined {
     const shapes = Puzzle.calculateShapes(puzzle);
     const rift_shapes = puzzle.rifts.map(rift => calculateRiftShape(puzzle, shapes, rift));
-    let res = calculateClippedShapes_(puzzle, shapes, rift_shapes, 0);
+    let layers = calculateClippedShapes_(puzzle, shapes, rift_shapes, 0);
     const RETRY = 5;
     const PERTURBATION = 1e-4;
     for (const n of indices(RETRY)) {
-      if (res !== undefined) break;
+      if (layers !== undefined) break;
       const perturbation = {
         angle: (Math.random() - 0.5) * PERTURBATION,
         offset: (Math.random() - 0.5) * PERTURBATION,
@@ -986,11 +985,11 @@ export namespace PrincipalPuzzle {
       }));
       // console.warn(`fail to calculate clipped shapes, try again with perturbation (${n})`, perturbation);
       const rift_shapes = perturb_rifts.map(rift => calculateRiftShape(puzzle, shapes, rift));
-      res = calculateClippedShapes_(puzzle, shapes, rift_shapes, n + 1);
+      layers = calculateClippedShapes_(puzzle, shapes, rift_shapes, n + 1);
     }
-    if (res === undefined) return undefined;
+    if (layers === undefined) return undefined;
 
-    return {...res, rifts:rift_shapes};
+    return {layers, rifts:rift_shapes};
   }
   function calculateRiftAngle(
     puzzle: PrincipalPuzzle,
@@ -1018,10 +1017,7 @@ export namespace PrincipalPuzzle {
     shapes: Map<Piece, Geo.Path<Edge>>,
     rift_shapes: Geo.Path<undefined>[],
     n: number,
-  ): {
-    principal: Map<Piece, Geo.Path<Geo.CutSource<Edge, undefined>>[]>,
-    complementary: Map<Piece, Geo.Path<Geo.CutSource<Edge, undefined>>[]>,
-  } | undefined {
+  ): Map<Piece, Geo.Path<Geo.CutSource<Edge, undefined>>[]>[] | undefined {
     const ANG_EPS = 1e-3;
     const POS_EPS = 1e-3;
 
@@ -1071,7 +1067,7 @@ export namespace PrincipalPuzzle {
     }
 
     // cut ramified pieces
-    const prin_shapes: Geo.Path<Geo.CutSource<Edge, undefined>>[] = [];
+    const seeds: Geo.Path<Geo.CutSource<Edge, undefined>>[][] = indices(puzzle.stands.length).map(_ => []);
     for (const i of indices(puzzle.ramified.length)) {
       const ramified = puzzle.ramified[i];
       const branch_cut = puzzle.branch_points[i];
@@ -1140,42 +1136,39 @@ export namespace PrincipalPuzzle {
         }
         append(cutted_shapes, piece, res!);
 
-        const ramified_piece_index = zip(ramified_piece_indices, branch_cut.order).find(([,ord]) => ord === 0)![0];
-        if (index === ramified_piece_index) {
-          const prin_shape0 =
-            rift_side ?
-              res.find(path =>
-                path.segs.some(seg =>
-                  seg.source.type === Geo.CutSourceType.LeftCut
-                  && seg.source.ref === rift_shape.segs[0]
-                  && seg.source.from === 0
+        for (const [ramified_piece_index, layer_index] of zip(ramified_piece_indices, branch_cut.order)) {
+          if (index === ramified_piece_index) {
+            const seed_shape0 =
+              rift_side ?
+                res.find(path =>
+                  path.segs.some(seg =>
+                    seg.source.type === Geo.CutSourceType.LeftCut
+                    && seg.source.ref === rift_shape.segs[0]
+                    && seg.source.from === 0
+                  )
                 )
-              )
-            :
-              res.find(path =>
-                path.segs.some(seg =>
-                  seg.source.type === Geo.CutSourceType.RightCut
-                  && seg.source.ref === rift_shape.segs[rift_shape.segs.length - 1]
-                  && seg.source.to === seg.source.ref.len
-                )
-              );
-          if (prin_shape0 !== undefined)
-            prin_shapes.push(prin_shape0);
+              :
+                res.find(path =>
+                  path.segs.some(seg =>
+                    seg.source.type === Geo.CutSourceType.RightCut
+                    && seg.source.ref === rift_shape.segs[rift_shape.segs.length - 1]
+                    && seg.source.to === seg.source.ref.len
+                  )
+                );
+            if (seed_shape0 !== undefined)
+              seeds[layer_index].push(seed_shape0);
+          }
         }
       }
     }
-    if (prin_shapes.length === 0) {
-      console.warn(`fail to clip path (${n}): cannot find principal part`);
-      return undefined;
-    }
 
-    // TODO: determine multiple layers at once
-    // grow principal part
-    const prin_cutted_shapes = new Set<Geo.Path<Geo.CutSource<Edge, undefined>>>();
-    prin_cutted_shapes.add(prin_shapes[0]);
+    // TODO: determine layers cross cut
+    const cutted_shapes_layer = new Map<Geo.Path<Geo.CutSource<Edge, undefined>>, number>(
+      seeds.flatMap((seeds, layer_index) => seeds.map(shape => [shape, layer_index]))
+    );
     
     const SMALLEST_ANGLE = 0.01;
-    for (const path of prin_cutted_shapes) {
+    for (const [path, layer_index] of cutted_shapes_layer) {
       for (const seg of path.segs) {
         if (seg.source.type !== Geo.CutSourceType.Seg) continue;
 
@@ -1203,7 +1196,11 @@ export namespace PrincipalPuzzle {
 
               if (adj_to_ - adj_from_ < SMALLEST_ANGLE) continue;
               
-              prin_cutted_shapes.add(adj_path);
+              if (cutted_shapes_layer.has(adj_path)) {
+                assert(cutted_shapes_layer.get(adj_path) === layer_index);
+              } else {
+                cutted_shapes_layer.set(adj_path, layer_index);
+              }
               break;
             }
           }
@@ -1211,18 +1208,23 @@ export namespace PrincipalPuzzle {
       }
     }
     
-    const principal = new Map<Piece, Geo.Path<Geo.CutSource<Edge, undefined>>[]>();
-    const complementary = new Map<Piece, Geo.Path<Geo.CutSource<Edge, undefined>>[]>();
+    let unclassified = new Set<Geo.Path<Geo.CutSource<Edge, undefined>>>();
+    const layers = indices(puzzle.stands.length)
+      .map(_ => new Map<Piece, Geo.Path<Geo.CutSource<Edge, undefined>>[]>());
     for (const [piece, paths] of cutted_shapes) {
       for (const path of paths) {
-        if (prin_cutted_shapes.has(path)) {
-          append(principal, piece, [path]);
+        if (cutted_shapes_layer.has(path)) {
+          const layer_index = cutted_shapes_layer.get(path)!;
+          append(layers[layer_index], piece, [path]);
         } else {
-          append(complementary, piece, [path]);
+          unclassified.add(path);
         }
       }
     }
-    return { principal, complementary };
+    if (unclassified.size > 0) {
+      console.warn(`fail to clip path (${n}): ${unclassified.size} shapes are not classified into any layer`);
+    }
+    return layers;
   }
 
   export function setShift(puzzle: PrincipalPuzzle, side: boolean, sheet: number, angle: Geo.Angle): boolean {
@@ -1395,7 +1397,7 @@ export namespace PrincipalPuzzleWithTexture {
     const clipped_shapes = PrincipalPuzzle.calculateClippedShapes(puzzle);
     if (clipped_shapes === undefined) return undefined;
     const images = new Set<ClippedImage<Image>>();
-    for (const [piece, shapes] of clipped_shapes.principal) {
+    for (const [piece, shapes] of clipped_shapes.layers[0]) {
       for (const shape of shapes) {
         images.add({
           image: puzzle.textures[puzzle.texture_indices.get(piece)!],
