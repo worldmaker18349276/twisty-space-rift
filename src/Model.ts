@@ -943,9 +943,10 @@ export namespace PrincipalPuzzle {
       const dis = Math.sqrt(radius * radius - s * s) - Geo.dot(dir, from);
       return Geo.add(from, Geo.mul(dir, dis));
     }
-    const left_inf = calculateInfPoint(left_point, middle, !is_solid, puzzle.R * 1.5);
-    const right_inf = calculateInfPoint(right_point, middle, !is_solid, puzzle.R * 1.5);
-    const inf_circle: Geo.DirectionalCircle = { center: [0,0], radius: puzzle.R * 1.5 };
+    const inf_radius = puzzle.R * 1.5 + Math.max(rift.left, rift.right) * puzzle.radius / 10;
+    const left_inf = calculateInfPoint(left_point, middle, !is_solid, inf_radius);
+    const right_inf = calculateInfPoint(right_point, middle, !is_solid, inf_radius);
+    const inf_circle: Geo.DirectionalCircle = { center: [0,0], radius: inf_radius };
     return {
       is_closed: false,
       start: left_point,
@@ -1103,7 +1104,10 @@ export namespace PrincipalPuzzle {
         const ramified_piece_indices_ = indices(ramified.turn)
           .map(n => mod(cut_angle + Math.PI*2 * n, Math.PI*2 * ramified.turn))
           .map(ramified_angle => angle_upperbounds.findIndex(upperbound => ramified_angle < upperbound));
-        assert(!ramified_piece_indices_.includes(-1));
+        if (ramified_piece_indices_.includes(-1)) {
+          console.warn(`fail to clip path (${n}): fail to cut ramified pieces`);
+          return undefined;
+        }
         ramified_piece_indices.push(...ramified_piece_indices_);
       }
 
