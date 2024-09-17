@@ -856,8 +856,81 @@ export var PrincipalPuzzle;
         const rift_dir = rift_side ? rift_seg.line.direction : Geo.mul(rift_seg.line.direction, -1);
         return Geo.angleBetween([0, 0], ref_dir, rift_dir);
     }
-    function calculateClippedShapes_(puzzle, shapes, rift_shapes, n) {
+    const SMALLEST_ADJ_LEN = 0.01;
+    function getAdjacentSegs(puzzle, seg, shapes, rift_shapes, cutted_shapes) {
         var _a, _b, _c, _d;
+        const res = [];
+        if (seg.source.type === Geo.CutSourceType.Seg) {
+            const edge = seg.source.ref.source;
+            const len = shapes.get(edge.aff).segs[edge.aff.edges.indexOf(edge)].len;
+            const adjs = edge.auxiliary ? [{ edge: edge.adj, offset: len, from: 0, to: len }]
+                : Puzzle.getAdjacentEdges(puzzle, edge);
+            for (const adj of adjs) {
+                if (adj.edge.aff.type === PieceType.InfPiece)
+                    continue;
+                const from = Math.max((_a = seg.source.from) !== null && _a !== void 0 ? _a : 0, adj.from);
+                const to = Math.min((_b = seg.source.to) !== null && _b !== void 0 ? _b : seg.source.ref.len, adj.to);
+                const adj_edge = adj.edge;
+                const adj_from = adj.offset - to;
+                const adj_to = adj.offset - from;
+                for (const adj_path of cutted_shapes.get(adj_edge.aff)) {
+                    for (const adj_seg of adj_path.segs) {
+                        if (!(adj_seg.source.type === Geo.CutSourceType.Seg && adj_seg.source.ref.source === adj_edge))
+                            continue;
+                        const adj_from_ = Math.max((_c = adj_seg.source.from) !== null && _c !== void 0 ? _c : 0, adj_from);
+                        const adj_to_ = Math.min((_d = adj_seg.source.to) !== null && _d !== void 0 ? _d : seg.source.ref.len, adj_to);
+                        if (adj_to_ - adj_from_ < SMALLEST_ADJ_LEN)
+                            continue;
+                        res.push(adj_path);
+                        // break;
+                    }
+                }
+            }
+        }
+        else {
+            const rift_seg = seg.source.ref;
+            const rift_index = rift_shapes.findIndex(path => path.segs.includes(rift_seg));
+            assert(rift_index !== -1);
+            const rift_seg_index = rift_shapes[rift_index].segs.indexOf(rift_seg);
+            assert(rift_seg_index !== -1);
+            let piece = undefined;
+            for (const [piece_, shapes] of cutted_shapes) {
+                if (shapes.some(path => path.segs.includes(seg))) {
+                    piece = piece_;
+                    break;
+                }
+            }
+            assert(piece !== undefined);
+            const [src_from, src_to] = seg.source.type === Geo.CutSourceType.LeftCut ?
+                [seg.source.from, seg.source.to]
+                : [seg.source.to, seg.source.from];
+            const from = src_from !== null && src_from !== void 0 ? src_from : 0;
+            const to = src_to !== null && src_to !== void 0 ? src_to : rift_seg.len;
+            const adj_type = seg.source.type === Geo.CutSourceType.LeftCut ?
+                Geo.CutSourceType.RightCut : Geo.CutSourceType.LeftCut;
+            for (const [adj_piece, shapes] of cutted_shapes) {
+                if (adj_piece !== piece)
+                    continue;
+                for (const adj_path of shapes) {
+                    for (const adj_seg of adj_path.segs) {
+                        if (!(adj_seg.source.type === adj_type && adj_seg.source.ref === rift_seg))
+                            continue;
+                        const [adj_src_from, adj_src_to] = adj_seg.source.type === Geo.CutSourceType.LeftCut ?
+                            [adj_seg.source.from, adj_seg.source.to]
+                            : [adj_seg.source.to, adj_seg.source.from];
+                        const adj_from = Math.max(adj_src_from !== null && adj_src_from !== void 0 ? adj_src_from : 0, from);
+                        const adj_to = Math.min(adj_src_to !== null && adj_src_to !== void 0 ? adj_src_to : rift_seg.len, to);
+                        if (adj_to - adj_from < SMALLEST_ADJ_LEN)
+                            continue;
+                        res.push(adj_path);
+                        // break;
+                    }
+                }
+            }
+        }
+        return res;
+    }
+    function calculateClippedShapes_(puzzle, shapes, rift_shapes, n) {
         const ANG_EPS = 1e-3;
         const POS_EPS = 1e-3;
         const cutted_shapes = new Map();
@@ -981,45 +1054,36 @@ export var PrincipalPuzzle;
         }
         // TODO: determine layers cross cut
         const cutted_shapes_layer = new Map(seeds.flatMap((seeds, layer_index) => seeds.map(shape => [shape, layer_index])));
-        const SMALLEST_ANGLE = 0.01;
         for (const [path, layer_index] of cutted_shapes_layer) {
             for (const seg of path.segs) {
-                if (seg.source.type !== Geo.CutSourceType.Seg)
-                    continue;
-                // find adjacent edg
-                const edge = seg.source.ref.source;
-                const len = shapes.get(edge.aff).segs[edge.aff.edges.indexOf(edge)].len;
-                const adjs = edge.auxiliary ? [{ edge: edge.adj, offset: len, from: 0, to: len }]
-                    : Puzzle.getAdjacentEdges(puzzle, edge);
-                for (const adj of adjs) {
-                    if (adj.edge.aff.type === PieceType.InfPiece)
-                        continue;
-                    const from = Math.max((_a = seg.source.from) !== null && _a !== void 0 ? _a : 0, adj.from);
-                    const to = Math.min((_b = seg.source.to) !== null && _b !== void 0 ? _b : seg.source.ref.len, adj.to);
-                    const adj_edge = adj.edge;
-                    const adj_from = adj.offset - to;
-                    const adj_to = adj.offset - from;
-                    for (const adj_path of cutted_shapes.get(adj_edge.aff)) {
-                        for (const adj_seg of adj_path.segs) {
-                            if (!(adj_seg.source.type === Geo.CutSourceType.Seg && adj_seg.source.ref.source === adj_edge))
-                                continue;
-                            const adj_from_ = Math.max((_c = adj_seg.source.from) !== null && _c !== void 0 ? _c : 0, adj_from);
-                            const adj_to_ = Math.min((_d = adj_seg.source.to) !== null && _d !== void 0 ? _d : seg.source.ref.len, adj_to);
-                            if (adj_to_ - adj_from_ < SMALLEST_ANGLE)
-                                continue;
-                            if (cutted_shapes_layer.has(adj_path)) {
-                                assert(cutted_shapes_layer.get(adj_path) === layer_index);
-                            }
-                            else {
-                                cutted_shapes_layer.set(adj_path, layer_index);
-                            }
-                            break;
+                let adj_layer_index;
+                if (seg.source.type === Geo.CutSourceType.Seg) {
+                    adj_layer_index = layer_index;
+                }
+                else {
+                    const rift_seg = seg.source.ref;
+                    const rift_index = rift_shapes.findIndex(path => path.segs.includes(rift_seg));
+                    assert(rift_index !== -1);
+                    const is_foward = seg.source.type === Geo.CutSourceType.RightCut;
+                    // assume: they commute each others
+                    const perm = [...puzzle.branch_points[puzzle.rifts[rift_index].left].order];
+                    adj_layer_index = applyPerm(perm, is_foward ? +1 : -1, layer_index);
+                }
+                // find adjacent edges
+                for (const adj_path of getAdjacentSegs(puzzle, seg, shapes, rift_shapes, cutted_shapes)) {
+                    if (cutted_shapes_layer.has(adj_path)) {
+                        if (cutted_shapes_layer.get(adj_path) !== adj_layer_index) {
+                            console.warn(`fail to clip path (${n}): conflict layer`);
+                            return undefined;
                         }
+                    }
+                    else {
+                        cutted_shapes_layer.set(adj_path, adj_layer_index);
                     }
                 }
             }
         }
-        let unclassified = new Set();
+        const unclassified = new Set();
         const layers = indices(puzzle.stands.length)
             .map(_ => new Map());
         for (const [piece, paths] of cutted_shapes) {
@@ -1029,7 +1093,8 @@ export var PrincipalPuzzle;
                     append(layers[layer_index], piece, [path]);
                 }
                 else {
-                    unclassified.add(path);
+                    if (!path.segs.every(seg => seg.len < SMALLEST_ADJ_LEN * 2))
+                        unclassified.add(path);
                 }
             }
         }
@@ -1093,6 +1158,12 @@ export var PrincipalPuzzle;
         return true;
     }
     PrincipalPuzzle.setRift = setRift;
+    function applyPerm(cyclic, n, value) {
+        const i = cyclic.indexOf(value);
+        if (i === -1)
+            return value;
+        return cyclic[mod(i + n, cyclic.length)];
+    }
     function updateRiftRelAngles(puzzle) {
         const rel_angless = puzzle.branch_points.map((branch_point, pindex) => zip(branch_point.rel_angles, puzzle.rifts).map(([rel_angle, rift]) => {
             if (pindex === rift.left || pindex === rift.right) {
@@ -1110,12 +1181,6 @@ export var PrincipalPuzzle;
         const crosses = rel_angless.map(rel_angles => rel_angles.map(rel_angle => Math.floor(rel_angle / (Math.PI * 2))));
         // assume: they commute each others
         const perms = puzzle.rifts.map(({ left }) => [...puzzle.branch_points[left].order]);
-        function applyPerm(cyclic, n, value) {
-            const i = cyclic.indexOf(value);
-            if (i === -1)
-                return value;
-            return cyclic[mod(i + n, cyclic.length)];
-        }
         for (const [rel_angles, branch_point] of zip(rel_angless, puzzle.branch_points)) {
             branch_point.rel_angles = rel_angles;
         }

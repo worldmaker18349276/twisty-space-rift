@@ -708,6 +708,19 @@ export function flattenCut(path) {
         if (seg.source.type !== CutSourceType.Seg) {
             source = seg.source;
         }
+        else if (seg.source.ref.source.type === CutSourceType.RightCut) {
+            const from = seg.source.from === undefined ?
+                seg.source.ref.source.from
+                : seg.source.ref.source.from === undefined ?
+                    seg.source.ref.source.ref.len - seg.source.from
+                    : seg.source.ref.source.from - seg.source.from;
+            const to = seg.source.to === undefined ?
+                seg.source.ref.source.to
+                : seg.source.ref.source.from === undefined ?
+                    seg.source.ref.source.ref.len - seg.source.to
+                    : seg.source.ref.source.from - seg.source.to;
+            source = { ...seg.source.ref.source, from, to };
+        }
         else {
             const from = seg.source.from === undefined ?
                 seg.source.ref.source.from
