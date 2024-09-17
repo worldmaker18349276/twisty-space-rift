@@ -1471,20 +1471,22 @@ export namespace PrincipalPuzzleWithTexture {
     return positions;
   }
 
-  export function calculateClippedImages<Image>(puzzle: PrincipalPuzzleWithTexture<Image>): {images:Set<ClippedImage<Image>>, rifts:Geo.Path<undefined>[]} | undefined {
+  export function calculateClippedImages<Image>(puzzle: PrincipalPuzzleWithTexture<Image>): {images:Set<ClippedImage<Image>>[], rifts:Geo.Path<undefined>[]} | undefined {
     const positions = getPositions(puzzle);
     const clipped_shapes = PrincipalPuzzle.calculateClippedShapes(puzzle);
     if (clipped_shapes === undefined) return undefined;
-    const images = new Set<ClippedImage<Image>>();
-    for (const [piece, shapes] of clipped_shapes.layers[0]) {
-      for (const shape of shapes) {
-        images.add({
-          image: puzzle.textures[puzzle.texture_indices.get(piece)!],
-          region: shape,
-          transformation: positions.get(piece)!,
-        });
-      }
-    }
+    const images = clipped_shapes.layers.map(layer =>
+      new Set<ClippedImage<Image>>(
+        Array.from(layer)
+          .flatMap(([piece, shapes]) => shapes
+            .map(shape => ({
+              image: puzzle.textures[puzzle.texture_indices.get(piece)!],
+              region: shape,
+              transformation: positions.get(piece)!,
+            }))
+          )
+      )
+    );
     return {images, rifts:clipped_shapes.rifts};
   }
 

@@ -62,6 +62,7 @@ export class SpaceRiftPuzzle {
   current_images: Set<Model.ClippedImage<{canvas:HTMLCanvasElement, trans:Draw.CanvasMatrix}>>;
   current_rifts: Geo.Path<undefined>[];
   draw_frame: boolean = true;
+  draw_layer: number = 0;
   
   constructor(arg: {
     variant: PuzzleVariant;
@@ -216,7 +217,7 @@ export class SpaceRiftPuzzle {
       console.error("fail to calculate clipped images");
       return false;
     }
-    this.current_images = clipped_images.images;
+    this.current_images = clipped_images.images[this.draw_layer];
     this.current_rifts = clipped_images.rifts;
 
     for (const clipped_image of this.current_images) {
@@ -447,7 +448,8 @@ export class SpaceRiftPuzzle {
       const point = this.getPosition(event);
 
       if (event.button === 1) {
-        flip_rift(point);
+        this.draw_layer = (this.draw_layer + 1) % this.model.stands.length;
+        this.control_state = {type:PuzzleControlStateType.Updated};
         return;
       }
       

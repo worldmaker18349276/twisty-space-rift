@@ -1223,16 +1223,13 @@ export var PrincipalPuzzleWithTexture;
         const clipped_shapes = PrincipalPuzzle.calculateClippedShapes(puzzle);
         if (clipped_shapes === undefined)
             return undefined;
-        const images = new Set();
-        for (const [piece, shapes] of clipped_shapes.layers[0]) {
-            for (const shape of shapes) {
-                images.add({
-                    image: puzzle.textures[puzzle.texture_indices.get(piece)],
-                    region: shape,
-                    transformation: positions.get(piece),
-                });
-            }
-        }
+        const images = clipped_shapes.layers.map(layer => new Set(Array.from(layer)
+            .flatMap(([piece, shapes]) => shapes
+            .map(shape => ({
+            image: puzzle.textures[puzzle.texture_indices.get(piece)],
+            region: shape,
+            transformation: positions.get(piece),
+        })))));
         return { images, rifts: clipped_shapes.rifts };
     }
     PrincipalPuzzleWithTexture.calculateClippedImages = calculateClippedImages;
