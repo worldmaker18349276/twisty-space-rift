@@ -756,9 +756,23 @@ export var PrincipalPuzzle;
     function makePuzzle(factory, radius, center_x, R) {
         const puzzle = Puzzle.makePuzzle(factory, radius, center_x, R);
         const rifts = factory.make_rifts(radius, center_x, R);
+        const branch_points = rifts.branch_points.map((branch_point, index) => {
+            const rel_angles = rifts.rifts.map(rift => {
+                if (index === rift.left || index === rift.right) {
+                    return 0;
+                }
+                else {
+                    let coord = HyperbolicPolarCoordinate.getCoordinateFromPoint(rifts.branch_points[rift.left].point, rifts.branch_points[rift.right].point, branch_point.point);
+                    coord = HyperbolicPolarCoordinate.offsetTo(coord, rift.coord.offset);
+                    return Geo.as_0_2pi(coord.angle - rift.coord.angle);
+                }
+            });
+            return { ...branch_point, rel_angles };
+        });
         return {
             ...puzzle,
-            ...rifts,
+            branch_points,
+            rifts: rifts.rifts,
         };
     }
     PrincipalPuzzle.makePuzzle = makePuzzle;
@@ -1039,13 +1053,12 @@ export var PrincipalPuzzle;
             .map(i => puzzle.rifts.findIndex(({ left, right }) => left === i || right === i))
             .map(rift_index => rift_index === -1 ? 0 : lean_angle_diffs[rift_index])
             .map((lean_angle_diff, i) => lean_angle_diff - (is_moved[i] ? twist_angle_diff : 0));
-        // TODO: cross branch point
-        // TODO: fail for invalid rift crossing
         for (const i of indices(puzzle.branch_points.length)) {
             puzzle.branch_points[i].cut_angle += cut_angle_diffs[i];
             puzzle.branch_points[i].point = moved_points[i];
         }
         Puzzle.setShift(puzzle, side, sheets, angle);
+        updateRiftRelAngles(puzzle);
         return true;
     }
     PrincipalPuzzle.setShift = setShift;
@@ -1064,14 +1077,47 @@ export var PrincipalPuzzle;
         const [left_angle, right_angle] = HyperbolicPolarCoordinate.getFocusAngles({ offset: offset_, angle });
         const left_angle_diff = left_angle - left_angle0;
         const right_angle_diff = right_angle0 - right_angle;
-        // TODO: cross branch point
-        // TODO: fail for invalid rift crossing
         puzzle.rifts[index].coord = { offset: offset_, angle };
         puzzle.branch_points[puzzle.rifts[index].left].cut_angle += left_angle_diff;
         puzzle.branch_points[puzzle.rifts[index].right].cut_angle += right_angle_diff;
+        const succ = updateRiftRelAngles(puzzle);
         return true;
     }
     PrincipalPuzzle.setRift = setRift;
+    function updateRiftRelAngles(puzzle) {
+        const rel_angless = puzzle.branch_points.map((branch_point, pindex) => zip(branch_point.rel_angles, puzzle.rifts).map(([rel_angle, rift]) => {
+            if (pindex === rift.left || pindex === rift.right) {
+                return 0;
+            }
+            else {
+                let coord = HyperbolicPolarCoordinate.getCoordinateFromPoint(puzzle.branch_points[rift.left].point, puzzle.branch_points[rift.right].point, branch_point.point);
+                coord = HyperbolicPolarCoordinate.offsetTo(coord, rift.coord.offset);
+                let rel_angle_ = coord.angle - rift.coord.angle;
+                rel_angle_ = Geo.as_npi_pi(rel_angle_ - rel_angle) + rel_angle;
+                return rel_angle_;
+            }
+        }));
+        // TODO: fail for invalid rift crossing
+        const crosses = rel_angless.map(rel_angles => rel_angles.map(rel_angle => Math.floor(rel_angle / (Math.PI * 2))));
+        // assume: they commute each others
+        const perms = puzzle.rifts.map(({ left }) => [...puzzle.branch_points[left].order]);
+        function applyPerm(cyclic, n, value) {
+            const i = cyclic.indexOf(value);
+            if (i === -1)
+                return value;
+            return cyclic[mod(i + n, cyclic.length)];
+        }
+        for (const [rel_angles, branch_point] of zip(rel_angless, puzzle.branch_points)) {
+            branch_point.rel_angles = rel_angles;
+        }
+        for (const [cross, branch_point] of zip(crosses, puzzle.branch_points)) {
+            branch_point.rel_angles = zip(cross, branch_point.rel_angles)
+                .map(([turn, rel_angle]) => rel_angle - turn * Math.PI * 2);
+            branch_point.order = zip(perms, cross)
+                .reduce((order, [perm, turn]) => order.map(i => applyPerm(perm, turn, i)), branch_point.order);
+        }
+        return true;
+    }
 })(PrincipalPuzzle || (PrincipalPuzzle = {}));
 export var PrincipalPuzzleWithTexture;
 (function (PrincipalPuzzleWithTexture) {
