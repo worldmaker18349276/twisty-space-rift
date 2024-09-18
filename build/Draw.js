@@ -37,6 +37,13 @@ export function toCanvasMatrix(cs, m) {
     const m_ = Geo.compose(Geo.inverse(to_viewport), m, to_viewport);
     return [m_[0][0], m_[1][0], m_[0][1], m_[1][1], m_[0][2], m_[1][2]];
 }
+export function inverse(m) {
+    const m_ = Geo.inverse([
+        [m[0], m[2], m[4]],
+        [m[1], m[3], m[5]],
+    ]);
+    return [m_[0][0], m_[1][0], m_[0][1], m_[1][1], m_[0][2], m_[1][2]];
+}
 function moveTo(path, cs, point) {
     // console.log("moveTo", point[0], point[1]);
     const [x, y] = toViewport(cs, point);

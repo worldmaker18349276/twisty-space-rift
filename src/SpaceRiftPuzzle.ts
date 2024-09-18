@@ -36,6 +36,7 @@ export type PuzzleControlState =
 
 const BACKGROUND_STYLE = "rgb(30 30 30)";
 const FRAME_COLOR = "black";
+const PENCIL_COLOR = "rgb(100 100 100)";
 const RIFT_COLOR = "rgb(30 30 30)";
 const RIFTANGLE_TO_TIME = 100;
 const RIFTOFFSET_TO_TIME = 300;
@@ -61,8 +62,8 @@ export class SpaceRiftPuzzle {
   control_state: PuzzleControlState;
   current_images: Set<Model.ClippedImage<{canvas:HTMLCanvasElement, trans:Draw.CanvasMatrix}>>;
   current_rifts: Geo.Path<undefined>[];
-  draw_frame: boolean = true;
-  draw_layer: number = 0;
+  render_frame: boolean = true;
+  rendering_layer: number = 0;
   
   constructor(arg: {
     variant: PuzzleVariant;
@@ -217,7 +218,7 @@ export class SpaceRiftPuzzle {
       console.error("fail to calculate clipped images");
       return false;
     }
-    this.current_images = clipped_images.images[this.draw_layer];
+    this.current_images = clipped_images.images[this.rendering_layer];
     this.current_rifts = clipped_images.rifts;
 
     for (const clipped_image of this.current_images) {
@@ -260,6 +261,40 @@ export class SpaceRiftPuzzle {
     // ctx.fillText(`${n}`, 10, 50);
 
     return true;
+  }
+
+  startDrawSection(start: Geo.Point): ((point: Geo.Point) => boolean) | undefined {
+    const clipped_images = Model.PrincipalPuzzleWithTexture.calculateClippedImages(this.model);
+    if (clipped_images === undefined) {
+      console.error("fail to calculate clipped images");
+      return undefined;
+    }
+
+    return (point: Geo.Point) => {
+      const [x0, y0] = Draw.toViewport(this.cs, start);
+      const [x1, y1] = Draw.toViewport(this.cs, point);
+
+      const ctxs = this.model.textures.map(texture => texture.canvas.getContext("2d")!);
+      for (const clipped_image of clipped_images.images[this.rendering_layer]) {
+        const path = Draw.toCanvasPath(this.cs, clipped_image.region);
+        const pos = Draw.toCanvasMatrix(this.cs, clipped_image.transformation);
+        const ctx = ctxs[this.model.textures.indexOf(clipped_image.image)];
+
+        ctx.save();
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = PENCIL_COLOR;
+        ctx.transform(...Draw.inverse(clipped_image.image.trans));
+        ctx.transform(...Draw.inverse(pos));
+        ctx.clip(path);
+        ctx.beginPath();
+        ctx.moveTo(x0, y0);
+        ctx.lineTo(x1, y1);
+        ctx.stroke();
+        ctx.restore();
+      }
+      start = point;
+      return true;
+    };
   }
 
   getPosition(event: MouseEvent): Geo.Point {
@@ -339,6 +374,16 @@ export class SpaceRiftPuzzle {
   }
 
   registerController(): void {
+    let draw_section: ((point: Geo.Point) => boolean) | undefined = undefined;
+    const is_drawing = () => draw_section !== undefined;
+    const start_drawing = (point: Geo.Point) => { draw_section = this.startDrawSection(point); };
+    const cancel_drawing = () => { draw_section = undefined; };
+    const draw_to = (point: Geo.Point) => {
+      assert(draw_section !== undefined);
+      draw_section(point);
+      this.control_state = {type:PuzzleControlStateType.Updated};
+    };
+    
     let dragging_rift_index: number | undefined = undefined;
     const is_dragging_rift = () => dragging_rift_index !== undefined;
     const start_dragging_rift = (point: Geo.Point) => {
@@ -362,9 +407,9 @@ export class SpaceRiftPuzzle {
     const cancel_dragging_rift = () => {
       dragging_rift_index = undefined;
     };
-    const drag_rift_to_if_is_dragging = (point: Geo.Point) => {
-      if (dragging_rift_index !== undefined)
-        this.tearToImmediately(dragging_rift_index, point);
+    const drag_rift_to = (point: Geo.Point) => {
+      assert(dragging_rift_index !== undefined);
+      this.tearToImmediately(dragging_rift_index, point);
     };
 
     let scrolling_rift_index: number | undefined = undefined;
@@ -427,6 +472,7 @@ export class SpaceRiftPuzzle {
       if (this.current_images.size === 0) return;
 
       if (is_dragging_rift()) return;
+      if (is_drawing()) return;
       
       const point = this.getPosition(event);
       scroll_rift(point, event.deltaX, event.deltaY);
@@ -436,6 +482,7 @@ export class SpaceRiftPuzzle {
     this.canvas.addEventListener("mousedown", event => {
       event.preventDefault();
       if (is_dragging_rift()) return;
+      if (is_drawing()) return;
 
       if (event.button === 0 && event.ctrlKey) {
         inspect(this.getPosition(event));
@@ -448,12 +495,17 @@ export class SpaceRiftPuzzle {
       const point = this.getPosition(event);
 
       if (event.button === 1) {
-        this.draw_layer = (this.draw_layer + 1) % this.model.stands.length;
+        this.rendering_layer = (this.rendering_layer + 1) % this.model.stands.length;
         this.control_state = {type:PuzzleControlStateType.Updated};
         return;
       }
       
       if (!is_dragging_rift() && event.button === 0 && start_dragging_rift(point)) {
+        return;
+      }
+
+      if (!is_drawing() && event.shiftKey && event.button === 0) {
+        start_drawing(point);
         return;
       }
 
@@ -467,10 +519,19 @@ export class SpaceRiftPuzzle {
       if (this.current_images.size === 0) return;
       cancel_scrolling_rift();
       const point = this.getPosition(event);
-      drag_rift_to_if_is_dragging(point);
+      if (is_dragging_rift())
+        drag_rift_to(point);
+      else if (is_drawing())
+        draw_to(point);
     }, false);
-    this.canvas.addEventListener("mouseup", event => cancel_dragging_rift(), false);
-    this.canvas.addEventListener("mouseleave", event => cancel_dragging_rift(), false);
+    this.canvas.addEventListener("mouseup", event => {
+      cancel_dragging_rift();
+      cancel_drawing();
+    }, false);
+    this.canvas.addEventListener("mouseleave", event => {
+      cancel_dragging_rift();
+      cancel_drawing();
+    }, false);
   }
 
   registerRenderEvent(): void {

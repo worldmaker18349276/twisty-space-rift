@@ -55,6 +55,13 @@ export function toCanvasMatrix(cs: CoordinateSystem, m: Geo.Matrix2x3): CanvasMa
 
   return [m_[0][0], m_[1][0], m_[0][1], m_[1][1], m_[0][2], m_[1][2]];
 }
+export function inverse(m: CanvasMatrix): CanvasMatrix {
+  const m_ = Geo.inverse([
+    [m[0], m[2], m[4]],
+    [m[1], m[3], m[5]],
+  ]);
+  return [m_[0][0], m_[1][0], m_[0][1], m_[1][1], m_[0][2], m_[1][2]];
+}
 
 function moveTo(path: Path2D, cs: CoordinateSystem, point: Geo.Point): void {
   // console.log("moveTo", point[0], point[1]);

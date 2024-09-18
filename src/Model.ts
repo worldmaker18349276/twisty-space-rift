@@ -873,7 +873,7 @@ export namespace HyperbolicPolarCoordinate {
 
 export type PrincipalPuzzle = Puzzle & {
   // correspond to ramified
-  // assume: they commute each others
+  // CONSIDER: not commute case
   branch_points: {point:Geo.Point, cut_angle:Geo.Angle, order:number[], rel_angles:Geo.Angle[]}[];
   rifts: {left:number, right:number, coord:HyperbolicPolarCoordinate}[];
 };
@@ -1267,7 +1267,7 @@ export namespace PrincipalPuzzle {
           const rift_index = rift_shapes.findIndex(path => path.segs.includes(rift_seg));
           assert(rift_index !== -1);
           const is_foward = seg.source.type === Geo.CutSourceType.RightCut;
-          // assume: they commute each others
+          // CONSIDER: not commute case
           const perm = [...puzzle.branch_points[puzzle.rifts[rift_index].left].order];
           adj_layer_index = applyPerm(perm, is_foward ? +1 : -1, layer_index);
         }
@@ -1402,7 +1402,7 @@ export namespace PrincipalPuzzle {
     // TODO: fail for invalid rift crossing
     const crosses = rel_angless.map(rel_angles => rel_angles.map(rel_angle => Math.floor(rel_angle / (Math.PI*2))));
 
-    // assume: they commute each others
+    // CONSIDER: not commute case
     const perms = puzzle.rifts.map(({left}) => [...puzzle.branch_points[left].order]);
 
     for (const [rel_angles, branch_point] of zip(rel_angless, puzzle.branch_points)) {
