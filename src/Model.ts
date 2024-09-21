@@ -963,11 +963,25 @@ export namespace PrincipalPuzzle {
     layers: Map<Piece, Geo.Path<Geo.CutSource<Edge, undefined>>[]>[],
     rifts: Geo.Path<undefined>[],
   } | undefined {
-    const shapes = Puzzle.calculateShapes(puzzle);
-    const rift_shapes = puzzle.rifts.map(rift => calculateRiftShape(puzzle, shapes, rift));
-    let layers = calculateClippedShapes_(puzzle, shapes, rift_shapes, 0);
     const RETRY = 5;
     const PERTURBATION = 1e-4;
+
+    const shapes = Puzzle.calculateShapes(puzzle);
+
+    const rift_shapes = puzzle.rifts.map(rift => calculateRiftShape(puzzle, shapes, rift));
+    function go(
+      rift_shapes: Geo.Path<undefined>[],
+      n: number,
+    ): Map<Piece, Geo.Path<Geo.CutSource<Edge, undefined>>[]>[] | undefined {
+      const res = cutShapes(puzzle, shapes, rift_shapes, n);
+      if (res === undefined) {
+        return undefined;
+      } else {
+        const res2 = determineLayers(puzzle, shapes, rift_shapes, res.cutted_shapes, res.seeds, n);
+        return res2;
+      }
+    }
+    let layers = go(rift_shapes, 0);
     for (const n of indices(RETRY)) {
       if (layers !== undefined) break;
       const perturbation = {
@@ -985,7 +999,7 @@ export namespace PrincipalPuzzle {
       }));
       // console.warn(`fail to calculate clipped shapes, try again with perturbation (${n})`, perturbation);
       const rift_shapes = perturb_rifts.map(rift => calculateRiftShape(puzzle, shapes, rift));
-      layers = calculateClippedShapes_(puzzle, shapes, rift_shapes, n + 1);
+      layers = go(rift_shapes, n + 1);
     }
     if (layers === undefined) return undefined;
 
@@ -1102,104 +1116,105 @@ export namespace PrincipalPuzzle {
 
     return res;
   }
-  function calculateClippedShapes_(
+  function cutShapes(
     puzzle: PrincipalPuzzle,
     shapes: Map<Piece, Geo.Path<Edge>>,
     rift_shapes: Geo.Path<undefined>[],
-    n: number,
-  ): Map<Piece, Geo.Path<Geo.CutSource<Edge, undefined>>[]>[] | undefined {
+    n: number = 0,
+  ): {
+    cutted_shapes: Map<Piece, Geo.Path<Geo.CutSource<Edge, undefined>>[]>,
+    seeds: Geo.Path<Geo.CutSource<Edge, undefined>>[][],
+  } | undefined {
     const ANG_EPS = 1e-3;
     const POS_EPS = 1e-3;
 
     const cutted_shapes = new Map<Piece, Geo.Path<Geo.CutSource<Edge, undefined>>[]>();
 
-    // cut normal pieces
-    function cut<S>(
-      shape: Geo.Path<S>,
-      rift_shape: Geo.Path<undefined>,
+    function cut(
+      shapes: Geo.Path<Geo.CutSource<Edge, undefined>>[],
+      rift_shapes: Geo.Path<undefined>[],
       name: string,
-    ): Geo.Path<Geo.CutSource<S, undefined>>[] | undefined {
-      const res = Geo.cutRegion(shape, rift_shape);
-      if (res === undefined) {
-        console.warn(`fail to clip path (${n}): fail to cut piece ${name}`);
-        return undefined;
+    ): Geo.Path<Geo.CutSource<Edge, undefined>>[] | undefined {
+      const INSIDE_DIS = -1e-3;
+
+      for (const rift_shape of rift_shapes) {
+        const shapes_: Geo.Path<Geo.CutSource<Edge, undefined>>[] = [];
+        for (const shape of shapes) {
+          const res = Geo.cutRegion(shape, rift_shape);
+          if (res === undefined) {
+            console.warn(`fail to clip path (${n}): fail to cut piece ${name}`);
+            return undefined;
+          }
+          const dis1 = Geo.calculateNearestPoint(shape, Geo.getStartPoint(rift_shape)).dis;
+          const dis2 = Geo.calculateNearestPoint(shape, Geo.getEndPoint(rift_shape)).dis;
+          if (dis1 < INSIDE_DIS || dis2 < INSIDE_DIS) {
+            shapes_.push(...res.map(path => Geo.flattenCut(Geo.glueIncompleteCut(path, rift_shape))));
+            
+          } else if (res.some(path => Geo.hasIncompleteCut(path, rift_shape))) {
+            console.warn(`fail to clip path (${n}): fail to cut piece ${name}`);
+            return undefined;
+          } else {
+            shapes_.push(...res.map(path => Geo.flattenCut(path)));
+          }
+        }
+        shapes = shapes_;
       }
-      // TODO: incomplete cut
-      if (res.some(path => Geo.hasIncompleteCut(path, rift_shape))) {
-        console.warn(`fail to clip path (${n}): fail to cut piece ${name}`);
-        return undefined;
-      }
-      return res;
+      return shapes;
     }
 
+    // cut normal pieces
     for (const [piece, shape] of shapes) {
       if (piece.type === PieceType.InfPiece) continue;
       if (puzzle.ramified.some(ramified => ramified.pieces.includes(piece))) continue;
 
-      let res: Geo.Path<Geo.CutSource<Edge, undefined>>[];
-      for (const i of indices(rift_shapes.length)) {
-        const rift_shape = rift_shapes[i];
-        if (i === 0) {
-          const res_ = cut(shape, rift_shape, piece.name);
-          if (res_ === undefined) {
-            return undefined;
-          }
-          res = res_;
-        } else {
-          const ress = res!.map(subshape => cut(subshape, rift_shape, piece.name));
-          if (ress.some(subshapes => subshapes === undefined)) {
-            return undefined;
-          }
-          res = ress.flatMap(subshapes => subshapes!).map(subshape => Geo.flattenCut(subshape));
-        }
-      }
-      append(cutted_shapes, piece, res!);
+      const res = cut([Geo.cutNothing(shape)], rift_shapes, piece.name);
+      if (res === undefined) return undefined;
+      append(cutted_shapes, piece, res);
     }
 
     // cut ramified pieces
     const seeds: Geo.Path<Geo.CutSource<Edge, undefined>>[][] = indices(puzzle.stands.length).map(_ => []);
     for (const i of indices(puzzle.ramified.length)) {
       const ramified = puzzle.ramified[i];
-      const branch_cut = puzzle.branch_points[i];
+      const branch_point = puzzle.branch_points[i];
       const rift_index = puzzle.rifts.findIndex(({left, right}) => left === i || right === i);
       const rift_side = puzzle.rifts[rift_index].left === i;
       const rift_shape = rift_shapes[rift_index];
-      const branch_point = rift_side ? Geo.getStartPoint(rift_shape) : Geo.getEndPoint(rift_shape);
+      const point = rift_side ? Geo.getStartPoint(rift_shape) : Geo.getEndPoint(rift_shape);
       
-      let cut_angle = branch_cut.cut_angle;
+      // recalculate cut_angle based on shapes and check that errors are small enough
+      let cut_angle = branch_point.cut_angle;
       {
         const ramified_angle_ = calculateRiftAngle(puzzle, shapes, rift_shapes, i);
         const angle_err = Math.abs(Geo.as_npi_pi(ramified_angle_ - cut_angle));
-        if (angle_err >= ANG_EPS)
-          console.warn(`ramified angle error: ${angle_err}`);
-        const pos_err = Geo.norm(Geo.sub(
-          rift_side ? Geo.getStartPoint(rift_shapes[rift_index]) : Geo.getEndPoint(rift_shapes[rift_index]),
-          branch_cut.point,
-        ));
+        if (angle_err >= ANG_EPS) console.warn(`ramified angle error: ${angle_err}`);
+        const pos_err = Geo.norm(Geo.sub(point, branch_point.point));
+        if (pos_err >= POS_EPS) console.warn(`ramified position error: ${pos_err}`);
         cut_angle = Geo.as_npi_pi(ramified_angle_ - cut_angle) + cut_angle;
-        if (pos_err >= POS_EPS)
-          console.warn(`ramified position error: ${pos_err}`);
       }
 
-      const ramified_piece_indices: number[] = [];
+      // determine subpieces being cutted by the rift on this piece for each turn
+      let ramified_piece_indices: number[];
       {
-        const points = ramified.pieces.map(piece => shapes.get(piece)!.segs[0].target);
-        const angle_upperbounds = zip(points, rotate(points, 1))
-          .map(([start, end]) => Geo.angleBetween(branch_point, start, end))
+        const outpoints = ramified.pieces.map(piece => shapes.get(piece)!.segs[0].target);
+        const angle_upperbounds = zip(outpoints, rotate(outpoints, 1))
+          .map(([start, end]) => Geo.angleBetween(point, start, end))
           .map((_, i, angles) => angles.slice(0, i + 1).reduce((a, b) => a + b));
-        const ramified_piece_indices_ = indices(ramified.turn)
+        ramified_piece_indices = indices(ramified.turn)
           .map(n => mod(cut_angle + Math.PI*2 * n, Math.PI*2 * ramified.turn))
           .map(ramified_angle => angle_upperbounds.findIndex(upperbound => ramified_angle < upperbound));
-        if (ramified_piece_indices_.includes(-1)) {
+        if (ramified_piece_indices.includes(-1)) {
           console.warn(`fail to clip path (${n}): fail to cut ramified pieces`);
           return undefined;
         }
-        ramified_piece_indices.push(...ramified_piece_indices_);
       }
 
+      // cut subpieces
       for (const index of indices(ramified.pieces.length)) {
         const piece = ramified.pieces[index];
         const shape = shapes.get(piece)!;
+
+        // cut by the rift on this piece
         const res0 = Geo.cutRegion(shape, rift_shape, {
           index_of_path: 0,
           incident_with_cut_start_or_end: rift_side,
@@ -1210,23 +1225,17 @@ export namespace PrincipalPuzzle {
           return undefined;
         }
         if (res0.some(path => Geo.hasIncompleteCut(path, rift_shape))) {
-          console.warn(`fail to clip path (${n}): fail to cut ramified piece ${piece.name}`);
+          console.warn(`fail to clip path (${n}): fail to cut ramified piece: ${piece.name}`);
           return undefined;
         }
 
-        let res = res0;
-        for (const i of indices(rift_shapes.length)) {
-          if (i === rift_index) continue;
-          const rift_shape = rift_shapes[i];
-          const ress = res!.map(subshape => cut(subshape, rift_shape, piece.name));
-          if (ress.some(subshapes => subshapes === undefined)) {
-            return undefined;
-          }
-          res = ress.flatMap(subshapes => subshapes!).map(subshape => Geo.flattenCut(subshape));
-        }
-        append(cutted_shapes, piece, res!);
+        // cut by other rifts
+        const res = cut(res0, rift_shapes.filter((_, i) => i !== rift_index), piece.name);
+        if (res === undefined) return undefined;
+        append(cutted_shapes, piece, res);
 
-        for (const [ramified_piece_index, layer_index] of zip(ramified_piece_indices, branch_cut.order)) {
+        // assign each cutted subpiece to seeds
+        for (const [ramified_piece_index, layer_index] of zip(ramified_piece_indices, branch_point.order)) {
           if (index === ramified_piece_index) {
             const seed_shape0 =
               rift_side ?
@@ -1242,32 +1251,43 @@ export namespace PrincipalPuzzle {
                   path.segs.some(seg =>
                     seg.source.type === Geo.CutSourceType.RightCut
                     && seg.source.ref === rift_shape.segs[rift_shape.segs.length - 1]
-                    && seg.source.to === seg.source.ref.len
+                    && seg.source.from === seg.source.ref.len
                   )
                 );
-            if (seed_shape0 !== undefined)
+            if (seed_shape0 === undefined)
+              console.warn(`cannot find ${layer_index}-layer seed of ramified piece: ${piece.name}`);
+            else
               seeds[layer_index].push(seed_shape0);
           }
         }
       }
     }
-
-    // TODO: determine layers cross cut
+    return { cutted_shapes, seeds };
+  }
+  function determineLayers(
+    puzzle: PrincipalPuzzle,
+    shapes: Map<Piece, Geo.Path<Edge>>,
+    rift_shapes: Geo.Path<undefined>[],
+    cutted_shapes: Map<Piece, Geo.Path<Geo.CutSource<Edge, undefined>>[]>,
+    seeds: Geo.Path<Geo.CutSource<Edge, undefined>>[][],
+    n: number = 0,
+  ): Map<Piece, Geo.Path<Geo.CutSource<Edge, undefined>>[]>[] | undefined {
     const cutted_shapes_layer = new Map<Geo.Path<Geo.CutSource<Edge, undefined>>, number>(
       seeds.flatMap((seeds, layer_index) => seeds.map(shape => [shape, layer_index]))
     );
-    
+
     for (const [path, layer_index] of cutted_shapes_layer) {
       for (const seg of path.segs) {
-        let adj_layer_index;
+        let adj_layer_index: number;
         if (seg.source.type === Geo.CutSourceType.Seg) {
-            adj_layer_index = layer_index;
+          adj_layer_index = layer_index;
         } else {
           const rift_seg = seg.source.ref;
           const rift_index = rift_shapes.findIndex(path => path.segs.includes(rift_seg));
           assert(rift_index !== -1);
           const is_foward = seg.source.type === Geo.CutSourceType.RightCut;
           // CONSIDER: not commute case
+          // BUG: this doesn't work for not commute case
           const perm = [...puzzle.branch_points[puzzle.rifts[rift_index].left].order];
           adj_layer_index = applyPerm(perm, is_foward ? +1 : -1, layer_index);
         }
@@ -1471,6 +1491,18 @@ export namespace PrincipalPuzzleWithTexture {
     return positions;
   }
 
+  export function calculateImages<Image>(puzzle: PrincipalPuzzleWithTexture<Image>): Set<ClippedImage<Image>> {
+    const positions = getPositions(puzzle);
+    const shapes = Puzzle.calculateShapes(puzzle);
+    return new Set<ClippedImage<Image>>(
+      Array.from(shapes).map(([piece, shape]) => ({
+        image: puzzle.textures[puzzle.texture_indices.get(piece)!],
+        region: Geo.cutNothing(shape),
+        transformation: positions.get(piece)!,
+      }))
+    );
+  }
+
   export function calculateClippedImages<Image>(puzzle: PrincipalPuzzleWithTexture<Image>): {images:Set<ClippedImage<Image>>[], rifts:Geo.Path<undefined>[]} | undefined {
     const positions = getPositions(puzzle);
     const clipped_shapes = PrincipalPuzzle.calculateClippedShapes(puzzle);
@@ -1641,7 +1673,7 @@ export namespace Textures {
     const f13 = (z: Complex.ComplexNumber) => (z[1] > 0 ? z[0] < 0 : z[0] <= 0) ? f1(z) : f3(z);
     const f13_ = (z: Complex.ComplexNumber) => !(z[1] > 0 ? z[0] < 0 : z[0] <= 0) ? f1(z) : f3(z);
 
-    return [f1, f2, f3, f12, f12_, f13, f13_];
+    return [f3, f12_, f12, f13, f13_, f2];
   }
 }
 
@@ -1883,6 +1915,102 @@ export namespace Factory {
           }
           for (const piece of layer) {
             texture_indices.set(piece, 2*sheet);
+          }
+        }
+        return texture_indices;
+      },
+    };
+  }
+
+  export function DD(scale: number): PrincipalPuzzleWithTextureFactory {
+    return {
+      make_pieces: () => {
+        const layers = indices(3).map(i => Puzzle.makePieces(`_${i}`));
+        
+        const piece50Ls = layers.map(layer => Edge.walk(layer.stand, [0, 1, -1, 1, 0]).aff);
+        const pieceCLs = layers.map(layer => Edge.walk(layer.stand, [0, 1, -1, 1]).aff);
+        const pieceCRs = layers.map(layer => Edge.walk(layer.stand, [0, 1, -1, -1]).aff);
+        const piece0Ls = layers.map(layer => Edge.walk(layer.stand, [0, 1]).aff);
+        const piece0Rs = layers.map(layer => Edge.walk(layer.stand, [0, 1, -1, 2]).aff);
+
+        // ramify center pieces
+
+        // ramified_pieceCLs[0].edges[1]: the edge from the bottom sheet to the top sheet
+        const ramified_pieceCLs = Puzzle.chunkPiece("CL", Puzzle.ramifyPiece("", [pieceCLs[0], pieceCLs[2]], 0), 2);
+
+        // ramified_pieceCRs[0].edges[1]: the edge from the bottom sheet to the second sheet
+        const ramified_pieceCRs = Puzzle.chunkPiece("CR", Puzzle.ramifyPiece("", [pieceCRs[1], pieceCRs[2]], 0), 2);
+
+        // ramify corner pieces
+
+        // ramified_piece0Ls[0].edges[1]: the edge from the second sheet to the top sheet
+        const ramified_piece0Ls = Puzzle.chunkPiece("0L", Puzzle.ramifyPiece("", [piece0Ls[0], piece0Ls[1]], 0), 1);
+
+        // ramified_piece0Rs[0].edges[1]: the edge from the second sheet to the top sheet
+        const ramified_piece0Rs = Puzzle.chunkPiece("0R", Puzzle.ramifyPiece("", [piece0Rs[0], piece0Rs[1]], 0), 1);
+
+        Puzzle.swapAdj(piece50Ls[0].edges[0], piece50Ls[1].edges[0]);
+        Puzzle.swapAdj(piece50Ls[0].edges[1], piece50Ls[1].edges[1], piece50Ls[2].edges[1]);
+        Puzzle.swapAdj(piece50Ls[1].edges[2], piece50Ls[2].edges[2]);
+        
+        const pieces = layers.flatMap(layer => layer.pieces)
+          .filter(p => ![pieceCLs[0], pieceCLs[2], pieceCRs[1], pieceCRs[2], piece0Ls[0], piece0Ls[1], piece0Rs[0], piece0Rs[1]].includes(p))
+          .concat(ramified_pieceCLs)
+          .concat(ramified_pieceCRs)
+          .concat(ramified_piece0Ls)
+          .concat(ramified_piece0Rs);
+        
+        return {
+          pieces,
+          stands: layers.map(layer => layer.stand),
+          ramified: [
+            {pieces:ramified_pieceCLs, turn:2},
+            {pieces:ramified_pieceCRs, turn:2},
+            {pieces:ramified_piece0Ls, turn:2},
+            {pieces:ramified_piece0Rs, turn:2},
+          ],
+        };
+      },
+      make_rifts: (radius: Geo.Distance, center_x: Geo.Distance, R: Geo.Distance) => {
+        return {
+          branch_points: [
+            {point: [-center_x, 0], cut_angle: Math.PI/6, order: [0, 2]},
+            {point: [center_x, 0], cut_angle: Math.PI/6, order: [1, 2]},
+            {point: [0, center_x/Math.sqrt(3)], cut_angle: Math.PI/3, order: [0, 1]},
+            {point: [0, -center_x/Math.sqrt(3)], cut_angle: Math.PI/3, order: [0, 1]},
+          ],
+          rifts: [
+            {left:0, right:1, coord:{offset:0.0, angle:0.0}},
+            {left:2, right:3, coord:{offset:0.0, angle:0.0}},
+          ],
+        };
+      },
+      make_texture_functions: puzzle => Textures.getDDTextureFunction(puzzle, scale),
+      determine_texture_indices: (puzzle: PrincipalPuzzle) => {
+        const texture_indices = new Map<Piece, number>();
+        for (const sheet of indices(puzzle.stands.length)) {
+          const texture_index = sheet;
+          const edge = Puzzle.edgeAt(puzzle, sheet, [0, 1, -1]);
+          texture_indices.set(edge.aff, texture_index);
+          texture_indices.set(Edge.walk(edge, [0]).aff, texture_index);
+          texture_indices.set(Edge.walk(edge, [1]).aff, texture_index);
+          texture_indices.set(Edge.walk(edge, [2]).aff, texture_index);
+          texture_indices.set(Edge.walk(edge, [3]).aff, texture_index);
+        }
+        for (const sheet of indices(puzzle.stands.length)) {
+          const texture_index = sheet + 3;
+          const layer = new Set<Piece>();
+          layer.add(Puzzle.edgeAt(puzzle, sheet, []).aff);
+          for (const piece of layer) {
+            for (const edge of piece.edges) {
+              const adj_piece = edge.adj.aff;
+              if (adj_piece.type !== PieceType.InfPiece && !texture_indices.has(adj_piece)) {
+                layer.add(adj_piece);
+              }
+            }
+          }
+          for (const piece of layer) {
+            texture_indices.set(piece, texture_index);
           }
         }
         return texture_indices;

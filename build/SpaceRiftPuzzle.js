@@ -13,6 +13,7 @@ const BACKGROUND_STYLE = "rgb(30 30 30)";
 const FRAME_COLOR = "black";
 const PENCIL_COLOR = "rgb(100 100 100)";
 const RIFT_COLOR = "rgb(30 30 30)";
+const FOCUS_FRAME_COLOR = "red";
 const RIFTANGLE_TO_TIME = 100;
 const RIFTOFFSET_TO_TIME = 300;
 const TWIST_DURATION = 300;
@@ -27,11 +28,13 @@ export var PuzzleVariant;
     PuzzleVariant["Dipole3H"] = "Dipole(3) H";
     PuzzleVariant["Dipole3V"] = "Dipole(3) V";
     PuzzleVariant["Quadrapole3"] = "Quadrapole(3)";
+    PuzzleVariant["DipoleDipole"] = "Dipole(2)-Dipole(2)";
 })(PuzzleVariant || (PuzzleVariant = {}));
 export class SpaceRiftPuzzle {
     constructor(arg) {
         this.render_frame = true;
         this.rendering_layer = 0;
+        this.focus_piece = undefined;
         this.variant = arg.variant;
         this.canvas = arg.canvas;
         this.model = arg.model;
@@ -72,6 +75,10 @@ export class SpaceRiftPuzzle {
         }
         else if (variant === PuzzleVariant.Quadrapole3) {
             const model = Model.PrincipalPuzzleWithTexture.makePuzzle(Model.Factory.Q(3, 1), radius, center_x, R, drawComplex);
+            return new SpaceRiftPuzzle({ variant, canvas, model, cs });
+        }
+        else if (variant === PuzzleVariant.DipoleDipole) {
+            const model = Model.PrincipalPuzzleWithTexture.makePuzzle(Model.Factory.DD(1), radius, center_x, R, drawComplex);
             return new SpaceRiftPuzzle({ variant, canvas, model, cs });
         }
         else {
@@ -166,7 +173,7 @@ export class SpaceRiftPuzzle {
             ctx.restore();
         }
         // draw frame
-        if (true) {
+        if (this.render_frame) {
             ctx.lineWidth = 1;
             ctx.strokeStyle = FRAME_COLOR;
             for (const clipped_image of this.current_images) {
@@ -184,6 +191,22 @@ export class SpaceRiftPuzzle {
         ctx.strokeStyle = RIFT_COLOR;
         for (const rift of this.current_rifts)
             ctx.stroke(Draw.toCanvasPath(this.cs, rift));
+        if (this.focus_piece !== undefined) {
+            const images = Model.PrincipalPuzzleWithTexture.calculateImages(this.model);
+            const image = [...images].find(image => image.region.segs.some(seg => seg.source.type === Geo.CutSourceType.Seg
+                && seg.source.ref.source.aff === this.focus_piece));
+            const path = Draw.toCanvasPath(this.cs, image.region);
+            const pos = Draw.toCanvasMatrix(this.cs, image.transformation);
+            ctx.save();
+            ctx.clip(path);
+            ctx.transform(...pos);
+            ctx.transform(...image.image.trans);
+            ctx.drawImage(image.image.canvas, 0, 0);
+            ctx.restore();
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = FOCUS_FRAME_COLOR;
+            ctx.stroke(path);
+        }
         // // for debug
         // ctx.fillStyle = "white";
         // ctx.font = "26px serif";
@@ -219,6 +242,15 @@ export class SpaceRiftPuzzle {
             start = point;
             return true;
         };
+    }
+    setUpdated() {
+        if (this.control_state.type === PuzzleControlStateType.Ready) {
+            this.control_state = { type: PuzzleControlStateType.Updated };
+        }
+    }
+    focus(piece) {
+        this.focus_piece = piece;
+        this.setUpdated();
     }
     getPosition(event) {
         const rect = this.canvas.getBoundingClientRect();
@@ -364,7 +396,7 @@ export class SpaceRiftPuzzle {
         const inspect = (point) => {
             const piece = this.pointTo(point);
             console.log(piece);
-            this.control_state = { type: PuzzleControlStateType.Updated };
+            this.focus(this.focus_piece === piece ? undefined : piece);
         };
         this.canvas.addEventListener("wheel", event => {
             event.preventDefault();
@@ -431,6 +463,17 @@ export class SpaceRiftPuzzle {
         this.canvas.addEventListener("mouseleave", event => {
             cancel_dragging_rift();
             cancel_drawing();
+        }, false);
+        // TODO: find a better way
+        document.addEventListener("keydown", event => {
+            var _a;
+            if (event.key === "c") {
+                const cmd = prompt("command");
+                if (cmd === "m" || cmd === "move") {
+                    const n = parseInt(prompt("move focus to"));
+                    this.focus((_a = this.focus_piece) === null || _a === void 0 ? void 0 : _a.edges[n].adj.aff);
+                }
+            }
         }, false);
     }
     registerRenderEvent() {

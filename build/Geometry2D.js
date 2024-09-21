@@ -625,6 +625,25 @@ export function intersectPaths(path1, path2, cond) {
         && (pos2[1] >= 0 && pos2[1] <= path2.segs[pos2[0]].len));
     return intersections;
 }
+export function cutNothing(path) {
+    if (path.is_closed) {
+        return {
+            is_closed: path.is_closed,
+            segs: path.segs.map(seg => seg.type === PathSegType.Arc ?
+                ({ ...seg, source: { type: CutSourceType.Seg, ref: seg, from: undefined, to: undefined } })
+                : ({ ...seg, source: { type: CutSourceType.Seg, ref: seg, from: undefined, to: undefined } })),
+        };
+    }
+    else {
+        return {
+            is_closed: path.is_closed,
+            start: path.start,
+            segs: path.segs.map(seg => seg.type === PathSegType.Arc ?
+                ({ ...seg, source: { type: CutSourceType.Seg, ref: seg, from: undefined, to: undefined } })
+                : ({ ...seg, source: { type: CutSourceType.Seg, ref: seg, from: undefined, to: undefined } })),
+        };
+    }
+}
 export function cutRegion(path, cut, cond) {
     if (!path.is_closed)
         return undefined;

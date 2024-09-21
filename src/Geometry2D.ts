@@ -789,6 +789,29 @@ export function intersectPaths<T, S>(
   return intersections;
 }
 
+export function cutNothing<T, S>(path: Path<T>): Path<CutSource<T, S>> {
+  if (path.is_closed) {
+    return {
+      is_closed: path.is_closed,
+      segs: path.segs.map(seg =>
+        seg.type === PathSegType.Arc ?
+          ({...seg, source: {type:CutSourceType.Seg, ref:seg, from:undefined, to:undefined}})
+        : ({...seg, source: {type:CutSourceType.Seg, ref:seg, from:undefined, to:undefined}})
+      ),
+    };
+  } else {
+    return {
+      is_closed: path.is_closed,
+      start: path.start,
+      segs: path.segs.map(seg =>
+        seg.type === PathSegType.Arc ?
+          ({...seg, source: {type:CutSourceType.Seg, ref:seg, from:undefined, to:undefined}})
+        : ({...seg, source: {type:CutSourceType.Seg, ref:seg, from:undefined, to:undefined}})
+      ),
+    };
+  }
+}
+
 export function cutRegion<T, S>(
   path: Path<T>,
   cut: Path<S>,

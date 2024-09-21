@@ -38,6 +38,7 @@ const BACKGROUND_STYLE = "rgb(30 30 30)";
 const FRAME_COLOR = "black";
 const PENCIL_COLOR = "rgb(100 100 100)";
 const RIFT_COLOR = "rgb(30 30 30)";
+const FOCUS_FRAME_COLOR = "red";
 const RIFTANGLE_TO_TIME = 100;
 const RIFTOFFSET_TO_TIME = 300;
 const TWIST_DURATION = 300;
@@ -52,6 +53,7 @@ export enum PuzzleVariant {
   Dipole3H = "Dipole(3) H",
   Dipole3V = "Dipole(3) V",
   Quadrapole3 = "Quadrapole(3)",
+  DipoleDipole = "Dipole(2)-Dipole(2)",
 }
 
 export class SpaceRiftPuzzle {
@@ -64,6 +66,7 @@ export class SpaceRiftPuzzle {
   current_rifts: Geo.Path<undefined>[];
   render_frame: boolean = true;
   rendering_layer: number = 0;
+  focus_piece: Model.Piece | undefined = undefined;
   
   constructor(arg: {
     variant: PuzzleVariant;
@@ -114,6 +117,10 @@ export class SpaceRiftPuzzle {
 
     } else if (variant === PuzzleVariant.Quadrapole3) {
       const model = Model.PrincipalPuzzleWithTexture.makePuzzle(Model.Factory.Q(3, 1), radius, center_x, R, drawComplex);
+      return new SpaceRiftPuzzle({variant, canvas, model, cs});
+
+    } else if (variant === PuzzleVariant.DipoleDipole) {
+      const model = Model.PrincipalPuzzleWithTexture.makePuzzle(Model.Factory.DD(1), radius, center_x, R, drawComplex);
       return new SpaceRiftPuzzle({variant, canvas, model, cs});
 
     } else {
@@ -233,7 +240,7 @@ export class SpaceRiftPuzzle {
     }
 
     // draw frame
-    if (true) {
+    if (this.render_frame) {
       ctx.lineWidth = 1;
       ctx.strokeStyle = FRAME_COLOR;
       for (const clipped_image of this.current_images) {
@@ -254,6 +261,25 @@ export class SpaceRiftPuzzle {
     ctx.strokeStyle = RIFT_COLOR;
     for (const rift of this.current_rifts)
       ctx.stroke(Draw.toCanvasPath(this.cs, rift));
+
+    if (this.focus_piece !== undefined) {
+      const images = Model.PrincipalPuzzleWithTexture.calculateImages(this.model);
+      const image = [...images].find(image =>
+        image.region.segs.some(seg =>
+          seg.source.type === Geo.CutSourceType.Seg
+          && seg.source.ref.source.aff === this.focus_piece))!;
+      const path = Draw.toCanvasPath(this.cs, image.region);
+      const pos = Draw.toCanvasMatrix(this.cs, image.transformation);
+      ctx.save();
+      ctx.clip(path);
+      ctx.transform(...pos);
+      ctx.transform(...image.image.trans);
+      ctx.drawImage(image.image.canvas, 0, 0);
+      ctx.restore();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = FOCUS_FRAME_COLOR;
+      ctx.stroke(path);
+    }
 
     // // for debug
     // ctx.fillStyle = "white";
@@ -297,6 +323,15 @@ export class SpaceRiftPuzzle {
     };
   }
 
+  setUpdated(): void {
+    if (this.control_state.type === PuzzleControlStateType.Ready) {
+      this.control_state = {type: PuzzleControlStateType.Updated};
+    }
+  }
+  focus(piece: Model.Piece | undefined): void {
+    this.focus_piece = piece;
+    this.setUpdated();
+  }
   getPosition(event: MouseEvent): Geo.Point {
     const rect = this.canvas.getBoundingClientRect();
     const x = event.clientX - rect.left;
@@ -463,7 +498,7 @@ export class SpaceRiftPuzzle {
     const inspect = (point: Geo.Point) => {
       const piece = this.pointTo(point);
       console.log(piece);
-      this.control_state = {type: PuzzleControlStateType.Updated};
+      this.focus(this.focus_piece === piece ? undefined : piece);
     };
 
     this.canvas.addEventListener("wheel", event => {
@@ -531,6 +566,17 @@ export class SpaceRiftPuzzle {
     this.canvas.addEventListener("mouseleave", event => {
       cancel_dragging_rift();
       cancel_drawing();
+    }, false);
+
+    // TODO: find a better way
+    document.addEventListener("keydown", event => {
+      if (event.key === "c") {
+        const cmd = prompt("command");
+        if (cmd === "m" || cmd === "move") {
+          const n = parseInt(prompt("move focus to")!);
+          this.focus(this.focus_piece?.edges[n].adj.aff);
+        }
+      }
     }, false);
   }
 
