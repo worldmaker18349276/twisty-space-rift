@@ -490,7 +490,7 @@ export function intersectLineAndCircle(
 
 
 export enum CutSourceType { Seg, LeftCut, RightCut }
-export type CutSource<T, S> =
+export type CutSourceSeg<T> =
   | {
     type: CutSourceType.Seg;
     ref: PathSegLine<T>;
@@ -502,7 +502,8 @@ export type CutSource<T, S> =
     ref: PathSegArc<T>;
     from: Angle | undefined;
     to: Angle | undefined;
-  }
+  };
+export type CutSourceKnife<S> =
   | {
     type: CutSourceType.LeftCut | CutSourceType.RightCut;
     ref: PathSegLine<S>;
@@ -515,6 +516,7 @@ export type CutSource<T, S> =
     from: Angle | undefined;
     to: Angle | undefined;
   };
+export type CutSource<T, S> = CutSourceSeg<T> | CutSourceKnife<S>;
 
 function flipPathSeg<T>(seg: PathSeg<T>): PathSeg<T> {
   if (seg.type === PathSegType.Line) {
@@ -590,13 +592,13 @@ export function cutPath<T, S>(
   from: [index:number, t:Distance|Angle],
   to: [index:number, t:Distance|Angle],
   type: CutSourceType.Seg,
-): PathSeg<CutSource<T, S>>[];
+): PathSeg<CutSourceSeg<T>>[];
 export function cutPath<T, S>(
   path: Path<S>,
   from: [index:number, t:Distance|Angle],
   to: [index:number, t:Distance|Angle],
   type: CutSourceType.LeftCut | CutSourceType.RightCut,
-): PathSeg<CutSource<T, S>>[];
+): PathSeg<CutSourceKnife<S>>[];
 export function cutPath<T, S>(
   path: Path<T> | Path<S>,
   from: [index:number, t:Distance|Angle],
@@ -669,9 +671,6 @@ export function intersectPaths<T, S>(
   path2: Path<S>,
   cond?: CutIncidenceCondition,
 ): IntersectionInfo[] | undefined {
-  assert(path1.is_closed);
-  assert(!path2.is_closed);
-
   let intersections: IntersectionInfo[] = [];
 
   for (const i of indices(path1.segs.length)) {
@@ -735,6 +734,9 @@ export function intersectPaths<T, S>(
   }
 
   if (cond !== undefined) {
+    assert(path1.is_closed);
+    assert(!path2.is_closed);
+
     const EPS = 1e-3;
     const index1 = cond.index_of_path;
     const t1 = 0;

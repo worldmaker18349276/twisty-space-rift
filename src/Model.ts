@@ -1,6 +1,6 @@
 import * as Geo from "./Geometry2D.js";
 import * as Complex from "./Complex.js";
-import {assert, indices, mod, zip, rotate, unrollUntilLoopback, append} from "./Utils.js";
+import {assert, indices, mod, zip, rotate, unrollUntilLoopback, append, applyPerm, cmpOn, cmp, cyclicSort, reversePerm} from "./Utils.js";
 
 export type Edge = {
   aff: Piece;
@@ -873,15 +873,16 @@ export namespace HyperbolicPolarCoordinate {
 
 export type PrincipalPuzzle = Puzzle & {
   // correspond to ramified
-  // CONSIDER: not commute case
   branch_points: {point:Geo.Point, cut_angle:Geo.Angle, order:number[], rel_angles:Geo.Angle[]}[];
   rifts: {left:number, right:number, coord:HyperbolicPolarCoordinate}[];
+  rift_hierarchy: [below:number, above:number][];
 };
 
 export type PrincipalPuzzleFactory = PuzzleFactory & {
   make_rifts: (radius: Geo.Distance, center_x: Geo.Distance, R: Geo.Distance) => {
     branch_points: {point:Geo.Point, cut_angle:Geo.Angle, order:number[]}[];
     rifts: {left:number, right:number, coord:HyperbolicPolarCoordinate}[];
+    rift_hierarchy: [below:number, above:number][];
   },
 };
 
@@ -912,20 +913,75 @@ export namespace PrincipalPuzzle {
       ...puzzle,
       branch_points,
       rifts: rifts.rifts,
+      rift_hierarchy: rifts.rift_hierarchy,
     };
   }
 
+  function computeRiftRelAngles(
+    branch_points: {point:Geo.Point, cut_angle:Geo.Angle, order:number[], rel_angles:Geo.Angle[]}[],
+    new_rifts: {left:number, right:number, coord:HyperbolicPolarCoordinate}[],
+  ): {
+    rel_angless: Geo.Angle[][],
+    cross_hierarchy: [below:number, above:number][],
+  } | undefined {
+    const rel_angless_ = branch_points.map((branch_point, pindex) =>
+      new_rifts.map(rift => {
+        if (pindex === rift.left || pindex === rift.right) {
+          return 0;
+        } else {
+          let coord = HyperbolicPolarCoordinate.getCoordinateFromPoint(
+            branch_points[rift.left].point,
+            branch_points[rift.right].point,
+            branch_point.point,
+          );
+          coord = HyperbolicPolarCoordinate.offsetTo(coord, rift.coord.offset);
+          return coord.angle - rift.coord.angle;
+        }
+      })
+      .map((rel_angle, rift_index) => {
+        const prev_rel_angle = branch_point.rel_angles[rift_index];
+        return Geo.as_npi_pi(rel_angle - prev_rel_angle) + prev_rel_angle;
+      })
+    );
+
+    // validate rifts crossing branch points
+    const crosses = rel_angless_.map(rel_angles => rel_angles.map(rel_angle => Math.floor(rel_angle / (Math.PI*2))));
+    if (crosses.some(cross => cross.some(i => Math.abs(i) > 1))) {
+      console.warn("crossing a rift too many times");
+      return undefined;
+    }
+    if (crosses.some(cross => cross.filter(i => i !== 0).length > 1)) {
+      console.warn("crossing multiple rifts at the same time");
+      return undefined;
+    }
+    if (new_rifts.some(({left, right}) => crosses[left].some(j => j !== 0) && crosses[right].some(j => j !== 0))) {
+      console.warn("two endpoints of a rift crossing at the same time");
+      return undefined;
+    }
+
+    const rel_angless = zip(crosses, rel_angless_)
+      .map(([cross, rel_angles]) => zip(cross, rel_angles)
+        .map(([turn, rel_angle]) => rel_angle - turn * Math.PI * 2)
+      );
+    const cross_hierarchy = crosses.flatMap((cross, i) =>
+      cross.flatMap((turn, j) => (turn === 0 ? [] : [[i, j]]) as [number, number][]));
+    return {
+      rel_angless,
+      cross_hierarchy,
+    };
+  }
+  function getInfRadius(puzzle: PrincipalPuzzle, rift: {left:number, right:number}): number {
+    return puzzle.R * 1.5 + Math.max(rift.left, rift.right) * puzzle.radius / 10;
+  }
   function calculateRiftShape(
-    puzzle: PrincipalPuzzle,
-    shapes: Map<Piece, Geo.Path<Edge>>,
-    rift: {left:number, right:number, coord:HyperbolicPolarCoordinate},
+    left_point: Geo.Point,
+    right_point: Geo.Point,
+    coord: HyperbolicPolarCoordinate,
+    inf_radius: number,
   ): Geo.Path<undefined> {
-    const left_point = Geo.getStartPoint(shapes.get(puzzle.ramified[rift.left].pieces[0])!);
-    const right_point = Geo.getStartPoint(shapes.get(puzzle.ramified[rift.right].pieces[0])!);
+    const [middle, is_solid] = HyperbolicPolarCoordinate.getHyperbolaPoint(left_point, right_point, coord);
 
-    const [middle, is_solid] = HyperbolicPolarCoordinate.getHyperbolaPoint(left_point, right_point, rift.coord);
-
-    if (is_solid && Geo.norm(middle) < puzzle.R * 2) {
+    if (is_solid && Geo.norm(middle) < inf_radius) {
       return {
         is_closed: false,
         start: left_point,
@@ -943,7 +999,6 @@ export namespace PrincipalPuzzle {
       const dis = Math.sqrt(radius * radius - s * s) - Geo.dot(dir, from);
       return Geo.add(from, Geo.mul(dir, dis));
     }
-    const inf_radius = puzzle.R * 1.5 + Math.max(rift.left, rift.right) * puzzle.radius / 10;
     const left_inf = calculateInfPoint(left_point, middle, !is_solid, inf_radius);
     const right_inf = calculateInfPoint(right_point, middle, !is_solid, inf_radius);
     const inf_circle: Geo.DirectionalCircle = { center: [0,0], radius: inf_radius };
@@ -957,6 +1012,285 @@ export namespace PrincipalPuzzle {
       ],
     };
   }
+  function cutRiftShapes(
+    puzzle: PrincipalPuzzle,
+    rifts: {left:number, right:number, coord:HyperbolicPolarCoordinate}[],
+    rift_shapes: Geo.Path<undefined>[],
+    cross_hierarchy: [below:number, above:number][],
+  ): {
+    orders: number[][],
+    cutted_rift_shapes: Geo.Path<Geo.CutSourceSeg<undefined>>[],
+    rift_perms: Map<Geo.PathSeg<Geo.CutSourceSeg<undefined>>, number[]>,
+    rift_hierarchy: [below:number, above:number][],
+  } | undefined {
+    function isAbove(dag: [below:number, above:number][], below: number, above: number): boolean {
+      return dag.some(([i, j]) => i === below && j === above)
+          || dag.some(([i, j]) => i === below && isAbove(dag, j, above));
+    }
+    function allAbove(dag: [below:number, above:number][], below: number): Set<number> {
+      const res = new Set<number>([below]);
+      for (const curr of res)
+        for (const [i, j] of dag)
+          if (i === curr)
+            res.add(j);
+      res.delete(below);
+      return res;
+    }
+
+    const crossing_branch_point_indices = new Set(cross_hierarchy.map(([i, j]) => i));
+
+    // calculate transferred rift hierarchy
+    const transferred_rift_hierarchy = [...puzzle.rift_hierarchy];
+    for (const [below, above] of cross_hierarchy) {
+      if (isAbove(transferred_rift_hierarchy, above, below)) {
+        console.warn("try to cross the rift above from below");
+        return undefined;
+      }
+      transferred_rift_hierarchy.push([below, above]);
+    }
+
+    // calculate rift intersections
+    type RiftIntersectionInfo = {
+      below_pos: readonly [rift_index: number, seg_index: number, t: number];
+      above_pos: readonly [rift_index: number, seg_index: number, t: number];
+      ccw: boolean,
+    };
+    function assignHierarchy(index1: number, index2: number) {
+      if (isAbove(transferred_rift_hierarchy, index1, index2)) {
+        return true;
+      }
+      if (isAbove(transferred_rift_hierarchy, index2, index1)) {
+        return false;
+      }
+      // TODO: determine based on context
+      transferred_rift_hierarchy.push([index1, index2]);
+      return true;
+    }
+    const rift_intersections: RiftIntersectionInfo[] = indices(rift_shapes.length)
+      .flatMap(j => indices(j).map(i => [i, j] as const))
+      .flatMap(([index1, index2]) =>
+        Geo.intersectPaths(rift_shapes[index1], rift_shapes[index2])!
+          .map(info => ({
+            pos1: [index1, ...info.pos1] as const,
+            pos2: [index2, ...info.pos2] as const,
+            ccw: info.ccw,
+          }))
+          .map(info => assignHierarchy(index1, index2) ?
+            {below_pos: info.pos1, above_pos: info.pos2, ccw: info.ccw}
+          : {below_pos: info.pos2, above_pos: info.pos1, ccw: !info.ccw}
+          )
+      );
+
+    // determine permutations around intersection points
+    const intersection_above_perms = new Map<RiftIntersectionInfo, number[]>();
+    const intersection_below_perms = new Map<RiftIntersectionInfo, {prev:number[], post:number[]}>();
+    const sorted_rift_indices = indices(rifts.length)
+      .sort(cmpOn(rift_index => [allAbove(transferred_rift_hierarchy, rift_index).size]));
+    for (const rift_index of sorted_rift_indices) {
+      // find permutations for each crossing
+      const sorted_intersections = rift_intersections
+        .filter(info => info.below_pos[0] === rift_index || info.above_pos[0] === rift_index)
+        .sort(cmpOn(info => info.below_pos[0] === rift_index ? info.below_pos : info.above_pos));
+      const cross_perms = sorted_intersections
+        .map(info => {
+          if (info.above_pos[0] === rift_index) return [];
+          const above_perm = intersection_above_perms.get(info);
+          assert(above_perm !== undefined);
+          return info.ccw ? [...above_perm].reverse() : above_perm;
+        });
+
+      // determine permutations around intersections of this rift
+      const left_crossing = crossing_branch_point_indices.has(rifts[rift_index].left);
+      const right_crossing = crossing_branch_point_indices.has(rifts[rift_index].right);
+      assert(!left_crossing || !right_crossing);
+      if (!left_crossing) {
+        // from left
+        let perm = cyclicSort(puzzle.branch_points[rifts[rift_index].left].order);
+        for (const [info, cross_perm] of zip(sorted_intersections, cross_perms)) {
+          if (info.above_pos[0] === rift_index) {
+            assert(!intersection_above_perms.has(info));
+            intersection_above_perms.set(info, perm);
+          } else {
+            const prev = perm;
+            perm = cyclicSort(perm.map(v => applyPerm(cross_perm, 1, v)));
+            const post = perm;
+            assert(!intersection_below_perms.has(info));
+            intersection_below_perms.set(info, {prev, post});
+          }
+        }
+      } else {
+        // from right
+        let perm = reversePerm(cyclicSort(puzzle.branch_points[rifts[rift_index].right].order));
+        for (const [info, cross_perm] of zip(sorted_intersections, cross_perms).reverse()) {
+          if (info.above_pos[0] === rift_index) {
+            assert(!intersection_above_perms.has(info));
+            intersection_above_perms.set(info, perm);
+          } else {
+            const post = perm;
+            perm = cyclicSort(perm.map(v => applyPerm(cross_perm, -1, v)));
+            const prev = perm;
+            assert(!intersection_below_perms.has(info));
+            intersection_below_perms.set(info, {prev, post});
+          }
+        }
+      }
+    }
+
+    // determine and check orders of branch points
+    const orders: number[][] = [];
+    for (const rift_index of indices(rifts.length)) {
+      const sorted_intersections = rift_intersections
+        .filter(info => info.below_pos[0] === rift_index || info.above_pos[0] === rift_index)
+        .sort(cmpOn(info => info.below_pos[0] === rift_index ? info.below_pos : info.above_pos));
+
+      const left_crossing = crossing_branch_point_indices.has(rifts[rift_index].left);
+      const right_crossing = crossing_branch_point_indices.has(rifts[rift_index].right);
+      const left_order = puzzle.branch_points[rifts[rift_index].left].order;
+      const right_order = reversePerm(puzzle.branch_points[rifts[rift_index].right].order);
+      assert(!left_crossing || !right_crossing);
+      if (!left_crossing) {
+        // from left
+        let order = left_order;
+        for (const info of sorted_intersections) {
+          if (info.above_pos[0] === rift_index) {
+            const {prev, post} = intersection_below_perms.get(info)!;
+            const perm = info.ccw ? prev : reversePerm(post);
+            order = order.map(v => applyPerm(perm, 1, v));
+          } else {
+            const perm_ = intersection_above_perms.get(info)!;
+            const perm = info.ccw ? reversePerm(perm_) : perm_;
+            order = order.map(v => applyPerm(perm, 1, v));
+          }
+        }
+        orders[rifts[rift_index].left] = left_order;
+        orders[rifts[rift_index].right] = reversePerm(order);
+      } else {
+        // from right
+        let order = right_order;
+        for (const info of [...sorted_intersections].reverse()) {
+          if (info.above_pos[0] === rift_index) {
+            const {prev, post} = intersection_below_perms.get(info)!;
+            const perm = info.ccw ? prev : reversePerm(post);
+            order = order.map(v => applyPerm(perm, -1, v));
+          } else {
+            const perm_ = intersection_above_perms.get(info)!;
+            const perm = info.ccw ? reversePerm(perm_) : perm_;
+            order = order.map(v => applyPerm(perm, -1, v));
+          }
+        }
+        orders[rifts[rift_index].left] = order;
+        orders[rifts[rift_index].right] = reversePerm(right_order);
+      }
+
+      if (!left_crossing) {
+        const index = rifts[rift_index].left;
+        if (cmp(orders[index], puzzle.branch_points[index].order) !== 0) {
+          console.warn("branch point's order changes without crossing");
+          return undefined;
+        }
+      }
+      if (!right_crossing) {
+        const index = rifts[rift_index].right;
+        if (cmp(orders[index], puzzle.branch_points[index].order) !== 0) {
+          console.warn("branch point's order changes without crossing");
+          return undefined;
+        }
+      }
+    }
+
+    // cut rifts and determine permutations of each segments
+    const cutted_rift_shapes: Geo.Path<Geo.CutSourceSeg<undefined>>[] = [];
+    const rift_perms = new Map<Geo.PathSeg<Geo.CutSourceSeg<undefined>>, number[]>();
+    for (const rift_index of indices(rifts.length)) {
+      const sorted_below_intersections = rift_intersections
+        .filter(info => info.below_pos[0] === rift_index)
+        .filter(info => {
+          const {prev, post} = intersection_below_perms.get(info)!;
+          return cmp(prev, post) !== 0;
+        })
+        .sort(cmpOn(info => info.below_pos));
+
+      const seg_perms = sorted_below_intersections
+        .map(info => intersection_below_perms.get(info)!.post);
+      seg_perms.unshift(cyclicSort(orders[rifts[rift_index].left]));
+
+      const rift_shape = rift_shapes[rift_index];
+      assert(!rift_shape.is_closed);
+      const start_pos: [number, number] = [0, 0];
+      const end_pos: [number, number] = [rift_shape.segs.length-1, rift_shape.segs[rift_shape.segs.length-1].len];
+      const poss = sorted_below_intersections
+        .map(info => [info.below_pos[1], info.below_pos[2]] as [number, number]);
+      const segss = zip([start_pos, ...poss], [...poss, end_pos])
+        .map(([pos1, pos2]) => Geo.cutPath(rift_shape, pos1, pos2, Geo.CutSourceType.Seg));
+
+      assert(seg_perms.length === segss.length);
+
+      for (const [segs, perm] of zip(segss, seg_perms)) {
+        for (const seg of segs) {
+          rift_perms.set(seg, perm);
+        }
+      }
+
+      cutted_rift_shapes[rift_index] = {
+        is_closed: false,
+        start: rift_shape.start,
+        segs: segss.flatMap(segs => segs),
+      };
+    }
+
+    // compute new rift hierarchy
+    const rift_hierarchy: [below:number, above:number][] = [];
+    for (const info of rift_intersections) {
+      const {prev, post} = intersection_below_perms.get(info)!;
+      if (cmp(prev, post) === 0) continue;
+      const below = info.below_pos[0];
+      const above = info.above_pos[0];
+      if (isAbove(rift_hierarchy, above, below)) {
+        console.warn("invalid hierarchy");
+        return undefined;
+      }
+      rift_hierarchy.push([below, above]);
+    }
+
+    return {
+      orders,
+      cutted_rift_shapes,
+      rift_perms,
+      rift_hierarchy,
+    };
+  }
+  function calculateCuttedRiftShapes(
+    puzzle: PrincipalPuzzle,
+    rifts: {left:number, right:number, coord:HyperbolicPolarCoordinate}[],
+  ): {
+    orders: number[][],
+    rel_angless: Geo.Angle[][],
+    rift_shapes: Geo.Path<undefined>[],
+    cutted_rift_shapes: Geo.Path<Geo.CutSourceSeg<undefined>>[],
+    rift_perms: Map<Geo.PathSeg<Geo.CutSourceSeg<undefined>>, number[]>,
+    rift_hierarchy: [below:number, above:number][],
+  } | undefined {
+    const res1 = computeRiftRelAngles(puzzle.branch_points, rifts);
+    if (res1 === undefined) return undefined;
+    const rift_shapes = rifts.map(rift => {
+      const left_point = puzzle.branch_points[rift.left].point;
+      const right_point = puzzle.branch_points[rift.right].point;
+      return calculateRiftShape(
+        left_point,
+        right_point,
+        rift.coord,
+        getInfRadius(puzzle, rift),
+      );
+    });
+    const res2 = cutRiftShapes(puzzle, rifts, rift_shapes, res1.cross_hierarchy);
+    if (res2 === undefined) return undefined;
+    return {
+      ...res2,
+      rel_angless: res1.rel_angless,
+      rift_shapes,
+    };
+  }
+
   export function calculateClippedShapes(
     puzzle: PrincipalPuzzle,
   ): {
@@ -968,22 +1302,34 @@ export namespace PrincipalPuzzle {
 
     const shapes = Puzzle.calculateShapes(puzzle);
 
-    const rift_shapes = puzzle.rifts.map(rift => calculateRiftShape(puzzle, shapes, rift));
     function go(
-      rift_shapes: Geo.Path<undefined>[],
+      rifts: {left:number, right:number, coord:HyperbolicPolarCoordinate}[],
       n: number,
-    ): Map<Piece, Geo.Path<Geo.CutSource<Edge, undefined>>[]>[] | undefined {
-      const res = cutShapes(puzzle, shapes, rift_shapes, n);
-      if (res === undefined) {
-        return undefined;
-      } else {
-        const res2 = determineLayers(puzzle, shapes, rift_shapes, res.cutted_shapes, res.seeds, n);
-        return res2;
-      }
+    ): {
+      layers: Map<Piece, Geo.Path<Geo.CutSource<Edge, undefined>>[]>[],
+      rifts: Geo.Path<undefined>[],
+    } | undefined {
+      const res1 = calculateCuttedRiftShapes(puzzle, rifts);
+      if (res1 === undefined) return undefined;
+      const res2 = cutShapes(puzzle, shapes, res1.rift_shapes, n);
+      if (res2 === undefined) return undefined;
+      const layers = determineLayers(
+        puzzle,
+        shapes,
+        res1.rift_shapes,
+        res2.cutted_shapes,
+        res1.cutted_rift_shapes,
+        res1.rift_perms,
+        res2.seeds,
+        n,
+      );
+      if (layers === undefined) return undefined;
+      return {layers, rifts: res1.rift_shapes};
     }
-    let layers = go(rift_shapes, 0);
+
+    let res = go(puzzle.rifts, 0);
     for (const n of indices(RETRY)) {
-      if (layers !== undefined) break;
+      if (res !== undefined) break;
       const perturbation = {
         angle: (Math.random() - 0.5) * PERTURBATION,
         offset: (Math.random() - 0.5) * PERTURBATION,
@@ -998,12 +1344,9 @@ export namespace PrincipalPuzzle {
         },
       }));
       // console.warn(`fail to calculate clipped shapes, try again with perturbation (${n})`, perturbation);
-      const rift_shapes = perturb_rifts.map(rift => calculateRiftShape(puzzle, shapes, rift));
-      layers = go(rift_shapes, n + 1);
+      res = go(perturb_rifts, n + 1);
     }
-    if (layers === undefined) return undefined;
-
-    return {layers, rifts:rift_shapes};
+    return res;
   }
   function calculateRiftAngle(
     puzzle: PrincipalPuzzle,
@@ -1029,59 +1372,69 @@ export namespace PrincipalPuzzle {
   const SMALLEST_ADJ_LEN = 0.01;
   function getAdjacentSegs(
     puzzle: PrincipalPuzzle,
-    seg: Geo.PathSeg<Geo.CutSource<Edge, undefined>>,
+    seg: Geo.PathSeg<Geo.CutSourceSeg<Edge>>,
     shapes: Map<Piece, Geo.Path<Edge>>,
-    rift_shapes: Geo.Path<undefined>[],
     cutted_shapes: Map<Piece, Geo.Path<Geo.CutSource<Edge, undefined>>[]>,
   ): Geo.Path<Geo.CutSource<Edge, undefined>>[] {
     const res: Geo.Path<Geo.CutSource<Edge, undefined>>[] = [];
 
-    if (seg.source.type === Geo.CutSourceType.Seg) {
-      const edge = seg.source.ref.source;
-      const len = shapes.get(edge.aff)!.segs[edge.aff.edges.indexOf(edge)].len;
-      const adjs =
-        edge.auxiliary ? [{ edge: edge.adj, offset: len, from: 0, to: len }]
-        : Puzzle.getAdjacentEdges(puzzle, edge);
-      for (const adj of adjs) {
-        if (adj.edge.aff.type === PieceType.InfPiece) continue;
+    const edge = seg.source.ref.source;
+    const len = shapes.get(edge.aff)!.segs[edge.aff.edges.indexOf(edge)].len;
+    const adjs =
+      edge.auxiliary ? [{ edge: edge.adj, offset: len, from: 0, to: len }]
+      : Puzzle.getAdjacentEdges(puzzle, edge);
+    for (const adj of adjs) {
+      if (adj.edge.aff.type === PieceType.InfPiece) continue;
 
-        const from = Math.max(seg.source.from ?? 0, adj.from);
-        const to = Math.min(seg.source.to ?? seg.source.ref.len, adj.to);
+      const from = Math.max(seg.source.from ?? 0, adj.from);
+      const to = Math.min(seg.source.to ?? seg.source.ref.len, adj.to);
 
-        const adj_edge = adj.edge;
-        const adj_from = adj.offset - to;
-        const adj_to = adj.offset - from;
+      const adj_edge = adj.edge;
+      const adj_from = adj.offset - to;
+      const adj_to = adj.offset - from;
 
-        for (const adj_path of cutted_shapes.get(adj_edge.aff)!) {
-          for (const adj_seg of adj_path.segs) {
-            if (!(adj_seg.source.type === Geo.CutSourceType.Seg && adj_seg.source.ref.source === adj_edge)) continue;
-            const adj_from_ = Math.max(adj_seg.source.from ?? 0, adj_from);
-            const adj_to_ = Math.min(adj_seg.source.to ?? seg.source.ref.len, adj_to);
+      for (const adj_path of cutted_shapes.get(adj_edge.aff)!) {
+        for (const adj_seg of adj_path.segs) {
+          if (!(adj_seg.source.type === Geo.CutSourceType.Seg && adj_seg.source.ref.source === adj_edge)) continue;
+          const adj_from_ = Math.max(adj_seg.source.from ?? 0, adj_from);
+          const adj_to_ = Math.min(adj_seg.source.to ?? seg.source.ref.len, adj_to);
 
-            if (adj_to_ - adj_from_ < SMALLEST_ADJ_LEN) continue;
+          if (adj_to_ - adj_from_ < SMALLEST_ADJ_LEN) continue;
 
-            res.push(adj_path);
-            // break;
-          }
-        }
-      }
-
-    } else {
-      const rift_seg = seg.source.ref;
-      const rift_index = rift_shapes.findIndex(path => path.segs.includes(rift_seg));
-      assert(rift_index !== -1);
-      const rift_seg_index = rift_shapes[rift_index].segs.indexOf(rift_seg);
-      assert(rift_seg_index !== -1);
-
-      let piece: Piece | undefined = undefined;
-      for (const [piece_, shapes] of cutted_shapes) {
-        if (shapes.some(path => path.segs.includes(seg))) {
-          piece = piece_;
+          res.push(adj_path);
           break;
         }
       }
-      assert(piece !== undefined);
+    }
 
+    return res;
+  }
+  function getAdjacentRiftSegs(
+    seg: Geo.PathSeg<Geo.CutSourceKnife<undefined>>,
+    rift_shapes: Geo.Path<undefined>[],
+    cutted_rift_shapes: Geo.Path<Geo.CutSourceSeg<undefined>>[],
+    rift_perms: Map<Geo.PathSeg<Geo.CutSourceSeg<undefined>>, number[]>,
+    cutted_shapes: Map<Piece, Geo.Path<Geo.CutSource<Edge, undefined>>[]>,
+  ): [Geo.Path<Geo.CutSource<Edge, undefined>>, number[]][] {
+    const res: [Geo.Path<Geo.CutSource<Edge, undefined>>, number[]][] = [];
+
+    const rift_seg = seg.source.ref;
+    const rift_index = rift_shapes.findIndex(path => path.segs.includes(rift_seg));
+    assert(rift_index !== -1);
+    const rift_seg_index = rift_shapes[rift_index].segs.indexOf(rift_seg);
+    assert(rift_seg_index !== -1);
+
+    let piece: Piece | undefined = undefined;
+    for (const [piece_, shapes] of cutted_shapes) {
+      if (shapes.some(path => path.segs.includes(seg))) {
+        piece = piece_;
+        break;
+      }
+    }
+    assert(piece !== undefined);
+
+    const ranges_perms: {range:[from:number, to:number], perm:number[]}[] = [];
+    {
       const [src_from, src_to] =
         seg.source.type === Geo.CutSourceType.LeftCut ?
           [seg.source.from, seg.source.to]
@@ -1089,27 +1442,43 @@ export namespace PrincipalPuzzle {
       const from = src_from ?? 0;
       const to = src_to ?? rift_seg.len;
 
-      const adj_type =
-        seg.source.type === Geo.CutSourceType.LeftCut ?
-          Geo.CutSourceType.RightCut : Geo.CutSourceType.LeftCut;
+      for (const cutted_rift_seg of cutted_rift_shapes[rift_index].segs) {
+        if (cutted_rift_seg.source.ref !== rift_seg) continue;
+        const cutted_from = cutted_rift_seg.source.from ?? 0;
+        const cutted_to = cutted_rift_seg.source.to ?? rift_seg.len;
+        
+        const from_ = Math.max(from, cutted_from);
+        const to_ = Math.min(to, cutted_to);
 
-      for (const [adj_piece, shapes] of cutted_shapes) {
-        if (adj_piece !== piece) continue;
-        for (const adj_path of shapes) {
-          for (const adj_seg of adj_path.segs) {
-            if (!(adj_seg.source.type === adj_type && adj_seg.source.ref === rift_seg)) continue;
-            const [adj_src_from, adj_src_to] =
-              adj_seg.source.type === Geo.CutSourceType.LeftCut ?
-                [adj_seg.source.from, adj_seg.source.to]
-              : [adj_seg.source.to, adj_seg.source.from];
-            const adj_from = Math.max(adj_src_from ?? 0, from);
-            const adj_to = Math.min(adj_src_to ?? rift_seg.len, to);
+        const perm =
+          seg.source.type === Geo.CutSourceType.RightCut ?
+            [...rift_perms.get(cutted_rift_seg)!]
+          : cyclicSort([...rift_perms.get(cutted_rift_seg)!].reverse());
+        
+        ranges_perms.push({range:[from_, to_], perm});
+      }
+    }
 
-            if (adj_to - adj_from < SMALLEST_ADJ_LEN) continue;
+    const adj_type =
+      seg.source.type === Geo.CutSourceType.LeftCut ?
+        Geo.CutSourceType.RightCut : Geo.CutSourceType.LeftCut;
 
-            res.push(adj_path);
-            // break;
-          }
+    for (const adj_shape of cutted_shapes.get(piece)!) {
+      for (const adj_seg of adj_shape.segs) {
+        if (!(adj_seg.source.type === adj_type && adj_seg.source.ref === rift_seg)) continue;
+        const [adj_src_from, adj_src_to] =
+          adj_seg.source.type === Geo.CutSourceType.LeftCut ?
+            [adj_seg.source.from, adj_seg.source.to]
+          : [adj_seg.source.to, adj_seg.source.from];
+
+        for (const {range, perm} of ranges_perms) {
+          const adj_from = Math.max(adj_src_from ?? 0, range[0]);
+          const adj_to = Math.min(adj_src_to ?? rift_seg.len, range[1]);
+
+          if (adj_to - adj_from < SMALLEST_ADJ_LEN) continue;
+
+          res.push([adj_shape, perm]);
+          break;
         }
       }
     }
@@ -1269,6 +1638,8 @@ export namespace PrincipalPuzzle {
     shapes: Map<Piece, Geo.Path<Edge>>,
     rift_shapes: Geo.Path<undefined>[],
     cutted_shapes: Map<Piece, Geo.Path<Geo.CutSource<Edge, undefined>>[]>,
+    cutted_rift_shapes: Geo.Path<Geo.CutSourceSeg<undefined>>[],
+    rift_perms: Map<Geo.PathSeg<Geo.CutSourceSeg<undefined>>, number[]>,
     seeds: Geo.Path<Geo.CutSource<Edge, undefined>>[][],
     n: number = 0,
   ): Map<Piece, Geo.Path<Geo.CutSource<Edge, undefined>>[]>[] | undefined {
@@ -1278,22 +1649,29 @@ export namespace PrincipalPuzzle {
 
     for (const [path, layer_index] of cutted_shapes_layer) {
       for (const seg of path.segs) {
-        let adj_layer_index: number;
+        let adj_paths: [Geo.Path<Geo.CutSource<Edge, undefined>>, number[]][];
         if (seg.source.type === Geo.CutSourceType.Seg) {
-          adj_layer_index = layer_index;
+          // find adjacent edges
+          adj_paths = getAdjacentSegs(
+            puzzle,
+            seg as Geo.PathSeg<Geo.CutSourceSeg<Edge>>,
+            shapes,
+            cutted_shapes,
+          )
+          .map(adj_path => [adj_path, []]);
         } else {
-          const rift_seg = seg.source.ref;
-          const rift_index = rift_shapes.findIndex(path => path.segs.includes(rift_seg));
-          assert(rift_index !== -1);
-          const is_foward = seg.source.type === Geo.CutSourceType.RightCut;
-          // CONSIDER: not commute case
-          // BUG: this doesn't work for not commute case
-          const perm = [...puzzle.branch_points[puzzle.rifts[rift_index].left].order];
-          adj_layer_index = applyPerm(perm, is_foward ? +1 : -1, layer_index);
+          // find adjacent edges
+          adj_paths = getAdjacentRiftSegs(
+            seg as Geo.PathSeg<Geo.CutSourceKnife<undefined>>,
+            rift_shapes,
+            cutted_rift_shapes,
+            rift_perms,
+            cutted_shapes,
+          );
         }
 
-        // find adjacent edges
-        for (const adj_path of getAdjacentSegs(puzzle, seg, shapes, rift_shapes, cutted_shapes)) {
+        for (const [adj_path, perm] of adj_paths) {
+          const adj_layer_index = applyPerm(perm, 1, layer_index);
           if (cutted_shapes_layer.has(adj_path)) {
             if (cutted_shapes_layer.get(adj_path) !== adj_layer_index) {
               console.warn(`fail to clip path (${n}): conflict layer`);
@@ -1325,7 +1703,44 @@ export namespace PrincipalPuzzle {
     }
     return layers;
   }
+  
+  function updateRiftRelAngles(puzzle: PrincipalPuzzle): boolean {
+    const RETRY = 5;
+    const PERTURBATION = 1e-4;
 
+    const shapes = Puzzle.calculateShapes(puzzle);
+
+    let res = calculateCuttedRiftShapes(puzzle, puzzle.rifts);
+    for (const n of indices(RETRY)) {
+      if (res !== undefined) break;
+      const perturbation = {
+        angle: (Math.random() - 0.5) * PERTURBATION,
+        offset: (Math.random() - 0.5) * PERTURBATION,
+      };
+      const perturb_rifts = puzzle.rifts
+        .map(({left, right, coord}) => ({
+        left,
+        right,
+        coord: {
+          angle: coord.angle + perturbation.angle,
+          offset: coord.offset + perturbation.offset,
+        },
+      }));
+      res = calculateCuttedRiftShapes(puzzle, perturb_rifts);
+    }
+    if (res === undefined) {
+      console.error("fail to update rift rel angles");
+      return false;
+    }
+
+    for (const [[branch_point, rel_angles], order] of zip(zip(puzzle.branch_points, res.rel_angless), res.orders)) {
+      branch_point.rel_angles = rel_angles;
+      branch_point.order = order;
+    }
+    puzzle.rift_hierarchy = res.rift_hierarchy;
+    
+    return true;
+  }
   export function setShift(puzzle: PrincipalPuzzle, side: boolean, sheet: number, angle: Geo.Angle): boolean {
     const ANGLE_MAX_STEP: Geo.Angle = Math.PI/30;
 
@@ -1391,53 +1806,6 @@ export namespace PrincipalPuzzle {
     puzzle.branch_points[puzzle.rifts[index].right].cut_angle += right_angle_diff;
 
     const succ = updateRiftRelAngles(puzzle);
-    
-    return true;
-  }
-
-  function applyPerm(cyclic: number[], n: number, value: number): number {
-    const i = cyclic.indexOf(value);
-    if (i === -1) return value;
-    return cyclic[mod(i+n, cyclic.length)];
-  }
-  function updateRiftRelAngles(puzzle: PrincipalPuzzle): boolean {
-    const rel_angless = puzzle.branch_points.map((branch_point, pindex) =>
-      zip(branch_point.rel_angles, puzzle.rifts).map(([rel_angle, rift]) => {
-        if (pindex === rift.left || pindex === rift.right) {
-          return 0;
-        } else {
-          let coord = HyperbolicPolarCoordinate.getCoordinateFromPoint(
-            puzzle.branch_points[rift.left].point,
-            puzzle.branch_points[rift.right].point,
-            branch_point.point,
-          );
-          coord = HyperbolicPolarCoordinate.offsetTo(coord, rift.coord.offset);
-          let rel_angle_ = coord.angle - rift.coord.angle;
-          rel_angle_ = Geo.as_npi_pi(rel_angle_ - rel_angle) + rel_angle;
-          return rel_angle_;
-        }
-      })
-    );
-
-    // TODO: fail for invalid rift crossing
-    const crosses = rel_angless.map(rel_angles => rel_angles.map(rel_angle => Math.floor(rel_angle / (Math.PI*2))));
-
-    // CONSIDER: not commute case
-    const perms = puzzle.rifts.map(({left}) => [...puzzle.branch_points[left].order]);
-
-    for (const [rel_angles, branch_point] of zip(rel_angless, puzzle.branch_points)) {
-      branch_point.rel_angles = rel_angles;
-    }
-
-    for (const [cross, branch_point] of zip(crosses, puzzle.branch_points)) {
-      branch_point.rel_angles = zip(cross, branch_point.rel_angles)
-        .map(([turn, rel_angle]) => rel_angle - turn * Math.PI * 2);
-      branch_point.order = zip(perms, cross)
-        .reduce(
-          (order, [perm, turn]) => order.map(i => applyPerm(perm, turn, i)),
-          branch_point.order,
-        );
-    }
     
     return true;
   }
@@ -1719,6 +2087,7 @@ export namespace Factory {
           rifts: [
             {left:0, right:1, coord:{offset:0.0, angle:0.0}}
           ],
+          rift_hierarchy: [],
         };
       },
       make_texture_functions: puzzle => Textures.getDHTextureFunction(puzzle, turn, scale),
@@ -1792,6 +2161,7 @@ export namespace Factory {
           rifts: [
             {left:0, right:1, coord:{offset:0.0, angle:0.0}}
           ],
+          rift_hierarchy: [],
         };
       },
       make_texture_functions: puzzle => Textures.getDVTextureFunction(puzzle, turn, scale),
@@ -1880,14 +2250,15 @@ export namespace Factory {
         return {
           branch_points: [
             {point: [-center_x, 0], cut_angle: Math.PI/6, order: indices(turn)},
-            {point: [center_x, 0], cut_angle: Math.PI/6, order: rotate(indices(turn), 1).reverse()},
+            {point: [center_x, 0], cut_angle: mod(Math.PI/6 - 2*Math.PI, 2*Math.PI*turn), order: rotate(indices(turn), 2).reverse()},
             {point: [0, center_x/Math.sqrt(3)], cut_angle: Math.PI/3, order: indices(turn)},
-            {point: [0, -center_x/Math.sqrt(3)], cut_angle: Math.PI/3, order: rotate(indices(turn), 1).reverse()},
+            {point: [0, -center_x/Math.sqrt(3)], cut_angle: mod(Math.PI/3 + 2*Math.PI, 2*Math.PI*turn), order: indices(turn).reverse()},
           ],
           rifts: [
             {left:0, right:1, coord:{offset:0.0, angle:0.0}},
             {left:2, right:3, coord:{offset:0.0, angle:0.0}},
           ],
+          rift_hierarchy: [],
         };
       },
       make_texture_functions: puzzle => Textures.getQTextureFunction(puzzle, turn, scale),
@@ -1983,6 +2354,7 @@ export namespace Factory {
             {left:0, right:1, coord:{offset:0.0, angle:0.0}},
             {left:2, right:3, coord:{offset:0.0, angle:0.0}},
           ],
+          rift_hierarchy: [[0, 1]],
         };
       },
       make_texture_functions: puzzle => Textures.getDDTextureFunction(puzzle, scale),

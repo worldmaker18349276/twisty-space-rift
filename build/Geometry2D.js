@@ -513,8 +513,6 @@ function getSegCoordinate(start, seg, point) {
     }
 }
 export function intersectPaths(path1, path2, cond) {
-    assert(path1.is_closed);
-    assert(!path2.is_closed);
     let intersections = [];
     for (const i of indices(path1.segs.length)) {
         const start1 = getStartPoint(path1, i);
@@ -583,6 +581,8 @@ export function intersectPaths(path1, path2, cond) {
         }
     }
     if (cond !== undefined) {
+        assert(path1.is_closed);
+        assert(!path2.is_closed);
         const EPS = 1e-3;
         const index1 = cond.index_of_path;
         const t1 = 0;

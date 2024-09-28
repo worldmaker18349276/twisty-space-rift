@@ -39,4 +39,29 @@ export function append(map, key, values) {
         slots.push(...values);
     }
 }
+export function cyclicSort(cyclic) {
+    const perm = [...cyclic];
+    const min_index = perm.indexOf(Math.min(...perm));
+    return rotate(perm, min_index);
+}
+export function applyPerm(perm, n, value) {
+    const i = perm.indexOf(value);
+    if (i === -1)
+        return value;
+    return perm[mod(i + n, perm.length)];
+}
+export function reversePerm(perm) {
+    return rotate(perm, 1).reverse();
+}
+export function cmp(a1, a2) {
+    for (let i = 0; i < a1.length && i < a2.length; i++) {
+        const cmp = a1[i] - a2[i];
+        if (cmp !== 0)
+            return cmp;
+    }
+    return a1.length - a2.length;
+}
+export function cmpOn(key) {
+    return (value1, value2) => cmp(key(value1), key(value2));
+}
 //# sourceMappingURL=Utils.js.map
