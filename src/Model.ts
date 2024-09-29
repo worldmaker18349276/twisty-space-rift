@@ -8,14 +8,18 @@ import {
   rotate,
   unrollUntilLoopback,
   append,
-  applyPerm,
+  applyCyclicPerm,
   cmpOn,
   cmp,
-  cyclicSort,
-  reversePerm,
+  reverseCyclicPerm,
   isDAG,
   isReachable,
   allReachable,
+  Result,
+  asCyclicPerm,
+  applyCyclicPerm_,
+  CyclicPerm,
+  Digraph,
 } from "./Utils.js";
 
 export type Edge = {
@@ -76,22 +80,18 @@ export type State =
   | { type: StateType.LeftShifted, angle: Geo.Angle }
   | { type: StateType.RightShifted, angle: Geo.Angle };
 
-export type Puzzle = {
+export type AbstractPuzzle = {
   pieces: Piece[];
   stands: Edge[]; // boundary piece's edges at the top intersection point
   ramified: {pieces:Piece[], turn:number}[];
   states: State[];
-
-  radius: Geo.Distance;
-  center_x: Geo.Distance;
-  R: Geo.Distance;
 };
 
-export type PuzzleFactory = {
-  make_pieces: () => {pieces:Piece[], stands:Edge[], ramified:{pieces:Piece[], turn:number}[]},
+export type AbstractPuzzleBuilder = {
+  make_pieces: () => {pieces:Piece[], stands:Edge[], ramified:{pieces:Piece[], turn:number}[]};
 };
 
-export namespace Puzzle {
+export namespace AbstractPuzzle {
   function makeEdge(piece: Piece): Edge {
     const edge = {
       aff: piece,
@@ -213,7 +213,7 @@ export namespace Puzzle {
     return subpieces;
   }
 
-  export function edgeAt(puzzle: Puzzle, sheet: number, steps: number[]): Edge {
+  export function edgeAt(puzzle: AbstractPuzzle, sheet: number, steps: number[]): Edge {
     return Edge.walk(puzzle.stands[sheet], steps);
   }
 
@@ -362,29 +362,18 @@ export namespace Puzzle {
     };
   }
 
-  function ckeckPuzzleShape(radius: Geo.Distance, center_x: Geo.Distance, R: Geo.Distance): void {
-    assert(center_x > 0);
-    assert(radius > 0);
-    assert(center_x < radius);
-    assert(center_x * 2 > radius);
-    assert(R > center_x + radius);
-  }
-  export function makePuzzle(factory: PuzzleFactory, radius: Geo.Distance, center_x: Geo.Distance, R: Geo.Distance): Puzzle {
-    ckeckPuzzleShape(radius, center_x, R);
+  export function makePuzzle(factory: AbstractPuzzleBuilder): AbstractPuzzle {
     const {pieces, stands, ramified} = factory.make_pieces();
     return {
       pieces,
       stands,
       ramified,
       states: indices(stands.length).map(_ => ({ type: StateType.Aligned })),
-      radius,
-      center_x,
-      R,
     };
   }
 
   // side = true: left
-  export function getTwistEdges(puzzle: Puzzle, side: boolean, sheet: number): Edge[] {
+  export function getTwistEdges(puzzle: AbstractPuzzle, side: boolean, sheet: number): Edge[] {
     const edge0 =
       side ? edgeAt(puzzle, sheet, [-1, -1, -2, -1, 0])
       : edgeAt(puzzle, sheet, [0, 1, 2, 1, 0]);
@@ -392,7 +381,7 @@ export namespace Puzzle {
   }
   // side = true: left
   export function getTwistPieces(
-    puzzle: Puzzle,
+    puzzle: AbstractPuzzle,
     side: boolean,
     sheet: number,
   ): {pieces:Set<Piece>, sheets:Set<number>} | undefined {
@@ -426,7 +415,7 @@ export namespace Puzzle {
   }
 
   // side = true: left
-  function twistSnapped(puzzle: Puzzle, side: boolean, sheet: number, forward: boolean): void {
+  function twistSnapped(puzzle: AbstractPuzzle, side: boolean, sheet: number, forward: boolean): void {
     const {sheets} = getTwistPieces(puzzle, side, sheet)!;
     const edgess = Array.from(sheets).map(sheet => getTwistEdges(puzzle, side, sheet));
     const edgess_adj_rotated = edgess
@@ -440,7 +429,7 @@ export namespace Puzzle {
   }
   // side = true: left
   // sheets: Puzzle.getTwistPieces(puzzle, side, sheet).sheets
-  export function setShift(puzzle: Puzzle, side: boolean, sheets: Set<number>, angle: Geo.Angle): void {
+  export function setShift(puzzle: AbstractPuzzle, side: boolean, sheets: Set<number>, angle: Geo.Angle): void {
     if (side && Array.from(sheets).every(sheet => puzzle.states[sheet].type !== StateType.RightShifted)) {
       assert(
         Array.from(sheets).every(sheet => puzzle.states[sheet].type === StateType.LeftShifted)
@@ -463,7 +452,7 @@ export namespace Puzzle {
       assert(false);
     }
   }
-  export function snap(puzzle: Puzzle): {side: boolean, sheets: Set<number>, turn: number}[] {
+  export function snap(puzzle: AbstractPuzzle): {side: boolean, sheets: Set<number>, turn: number}[] {
     const ANGLE_EPS = 1e-8;
 
     const actions: {side: boolean, sheets: Set<number>, turn: number}[] = [];
@@ -484,12 +473,37 @@ export namespace Puzzle {
     }
     return actions;
   }
-  export function isAligned(puzzle: Puzzle): boolean {
+  export function isAligned(puzzle: AbstractPuzzle): boolean {
     return puzzle.states.every(state => state.type === StateType.Aligned);
   }
 }
 
+export type PuzzleShape = {
+  radius: Geo.Distance;
+  center_x: Geo.Distance;
+  R: Geo.Distance;
+};
+
+export type Puzzle = AbstractPuzzle & PuzzleShape;
+
 export namespace Puzzle {
+  function ckeckPuzzleShape(shape: PuzzleShape): void {
+    assert(shape.center_x > 0);
+    assert(shape.radius > 0);
+    assert(shape.center_x < shape.radius);
+    assert(shape.center_x * 2 > shape.radius);
+    assert(shape.R > shape.center_x + shape.radius);
+  }
+
+  export function makePuzzle(factory: AbstractPuzzleBuilder, shape: PuzzleShape): Puzzle {
+    ckeckPuzzleShape(shape);
+    const puzzle = AbstractPuzzle.makePuzzle(factory);
+    return {
+      ...puzzle,
+      ...shape,
+    };
+  }
+
   export function getTwistCircles(puzzle: Puzzle): [left:Geo.DirectionalCircle, right:Geo.DirectionalCircle] {
     return [
       { center: [-puzzle.center_x, 0], radius: puzzle.radius },
@@ -518,7 +532,7 @@ export namespace Puzzle {
       if (visited_sheets.includes(sheet)) continue;
       if (state.type === StateType.Aligned) continue;
       const side = state.type === StateType.LeftShifted;
-      const {sheets} = getTwistPieces(puzzle, side, sheet)!;
+      const {sheets} = AbstractPuzzle.getTwistPieces(puzzle, side, sheet)!;
       const trans =
         side ? Geo.rotateAround(state.angle, left_circle.center)
         : Geo.rotateAround(state.angle, right_circle.center);
@@ -566,11 +580,11 @@ export namespace Puzzle {
 
     const arcs = new Map<Edge, Arc>();
     arcs.set(
-      Puzzle.edgeAt(puzzle, 0, [0, 1, 1, 0]),
+      AbstractPuzzle.edgeAt(puzzle, 0, [0, 1, 1, 0]),
       { start: p0, end: p2, auxiliary_point, circle: right_circle },
     );
     arcs.set(
-      Puzzle.edgeAt(puzzle, 0, [0, 1, -1, 1, 0]),
+      AbstractPuzzle.edgeAt(puzzle, 0, [0, 1, -1, 1, 0]),
       { start: p2, end: p1, auxiliary_point, circle: right_circle },
     );
 
@@ -619,7 +633,7 @@ export namespace Puzzle {
 
     for (const shift_trans of getShiftTransformations(puzzle)) {
       const [sheet] = shift_trans.sheets;
-      const {pieces} = getTwistPieces(puzzle, shift_trans.side, sheet)!;
+      const {pieces} = AbstractPuzzle.getTwistPieces(puzzle, shift_trans.side, sheet)!;
       for (const piece of pieces) {
         for (const edge of piece.edges) {
           const arc = arcs.get(edge);
@@ -633,8 +647,8 @@ export namespace Puzzle {
     return arcs;
   }
   function calculateBoundaryShapes(puzzle: Puzzle, arcs: Map<Edge, Arc>, sheet: number): Map<Piece, Geo.Path<Edge>> {
-    const pieceBR = Puzzle.edgeAt(puzzle, sheet, []).aff;
-    const pieceBL = Puzzle.edgeAt(puzzle, sheet, [-1, 0]).aff;
+    const pieceBR = AbstractPuzzle.edgeAt(puzzle, sheet, []).aff;
+    const pieceBL = AbstractPuzzle.edgeAt(puzzle, sheet, [-1, 0]).aff;
 
     const circle: Geo.DirectionalCircle = { center: [0, 0], radius: puzzle.R };
     const top: Geo.Point = [0, puzzle.R];
@@ -743,7 +757,7 @@ export namespace Puzzle {
     const cycles = getShiftTransformations(puzzle)
       .flatMap(shifted_trans => Array.from(shifted_trans.sheets).map(sheet =>
         [
-          getTwistEdges(puzzle, shifted_trans.side, sheet),
+          AbstractPuzzle.getTwistEdges(puzzle, shifted_trans.side, sheet),
           sheet,
         ] as const
       ))
@@ -889,25 +903,31 @@ export namespace HyperbolicPolarCoordinate {
 
 export type PrincipalPuzzle = Puzzle & {
   // correspond to ramified
-  branch_points: {point:Geo.Point, cut_angle:Geo.Angle, order:(number[] | undefined), perm:number[], rel_angles:Geo.Angle[]}[];
+  branch_points: {
+    point: Geo.Point,
+    cut_angle: Geo.Angle,
+    order: number[] | undefined,
+    perm: CyclicPerm,
+    rel_angles: Geo.Angle[],
+  }[];
   rifts: {left:number, right:number, coord:HyperbolicPolarCoordinate}[];
-  rift_hierarchy: [below:number, above:number][];
+  rift_hierarchy: Digraph;
 };
 
-export type PrincipalPuzzleFactory = PuzzleFactory & {
-  make_rifts: (radius: Geo.Distance, center_x: Geo.Distance, R: Geo.Distance) => {
+export type PrincipalPuzzleBuilder = AbstractPuzzleBuilder & {
+  make_rifts: (shape: PuzzleShape) => {
     branch_points: {point:Geo.Point, cut_angle:Geo.Angle, order:number[]}[];
     rifts: {left:number, right:number, coord:HyperbolicPolarCoordinate}[];
-    rift_hierarchy: [below:number, above:number][];
-  },
+    rift_hierarchy: Digraph;
+  };
 };
 
 export namespace PrincipalPuzzle {
   const MAX_RIFT_OFFSET = 0.8;
 
-  export function makePuzzle(factory: PrincipalPuzzleFactory, radius: Geo.Distance, center_x: Geo.Distance, R: Geo.Distance): PrincipalPuzzle {
-    const puzzle = Puzzle.makePuzzle(factory, radius, center_x, R);
-    const rifts = factory.make_rifts(radius, center_x, R);
+  export function makePuzzle(factory: PrincipalPuzzleBuilder, shape: PuzzleShape): PrincipalPuzzle {
+    const puzzle = Puzzle.makePuzzle(factory, shape);
+    const rifts = factory.make_rifts(shape);
     const branch_points = rifts.branch_points.map((branch_point, index) => {
       const rel_angles = rifts.rifts.map(rift => {
         if (index === rift.left || index === rift.right) {
@@ -922,7 +942,7 @@ export namespace PrincipalPuzzle {
           return Geo.as_0_2pi(coord.angle - rift.coord.angle);
         }
       });
-      return {...branch_point, perm: cyclicSort(branch_point.order), rel_angles};
+      return {...branch_point, perm: asCyclicPerm(branch_point.order), rel_angles};
     });
 
     return {
@@ -936,10 +956,10 @@ export namespace PrincipalPuzzle {
   function computeRiftRelAngles(
     branch_points: {point:Geo.Point, cut_angle:Geo.Angle, rel_angles:Geo.Angle[]}[],
     new_rifts: {left:number, right:number, coord:HyperbolicPolarCoordinate}[],
-  ): {
+  ): Result<{
     rel_angless: Geo.Angle[][],
     cross_relations: [branch_point_index:number, rift_index:number][],
-  } | undefined {
+  }> {
     const rel_angless_ = branch_points.map((branch_point, pindex) =>
       new_rifts.map(rift => {
         if (pindex === rift.left || pindex === rift.right) {
@@ -963,16 +983,13 @@ export namespace PrincipalPuzzle {
     // validate rifts crossing branch points
     const crosses = rel_angless_.map(rel_angles => rel_angles.map(rel_angle => Math.floor(rel_angle / (Math.PI*2))));
     if (crosses.some(cross => cross.some(i => Math.abs(i) > 1))) {
-      console.warn("crossing a rift too many times");
-      return undefined;
+      return Result.err("crossing a rift too many times");
     }
     if (crosses.some(cross => cross.filter(i => i !== 0).length > 1)) {
-      console.warn("crossing multiple rifts at the same time");
-      return undefined;
+      return Result.err("crossing multiple rifts at the same time");
     }
     if (new_rifts.some(({left, right}) => crosses[left].some(j => j !== 0) && crosses[right].some(j => j !== 0))) {
-      console.warn("two endpoints of a rift crossing at the same time");
-      return undefined;
+      return Result.err("two endpoints of a rift crossing at the same time");
     }
 
     const rel_angless = zip(crosses, rel_angless_)
@@ -981,10 +998,10 @@ export namespace PrincipalPuzzle {
       );
     const cross_relations = crosses.flatMap((cross, i) =>
       cross.flatMap((turn, j) => (turn === 0 ? [] : [[i, j]]) as [number, number][]));
-    return {
+    return Result.ok({
       rel_angless,
       cross_relations,
-    };
+    });
   }
   function getInfRadius(puzzle: PrincipalPuzzle, rift: {left:number, right:number}): number {
     return puzzle.R * 1.5 + Math.max(rift.left, rift.right) * puzzle.radius / 10;
@@ -1033,12 +1050,12 @@ export namespace PrincipalPuzzle {
     rifts: {left:number, right:number, coord:HyperbolicPolarCoordinate}[],
     rift_shapes: Geo.Path<undefined>[],
     cross_relations: [branch_point_index:number, rift_index:number][],
-  ): {
-    crossing_branch_point_perms: (number[] | undefined)[],
+  ): Result<{
+    crossing_branch_point_perms: (CyclicPerm | undefined)[],
     cutted_rift_shapes: Geo.Path<Geo.CutSourceSeg<undefined>>[],
-    rift_perms: Map<Geo.PathSeg<Geo.CutSourceSeg<undefined>>, number[]>,
-    rift_hierarchy: [below:number, above:number][],
-  } | undefined {
+    rift_perms: Map<Geo.PathSeg<Geo.CutSourceSeg<undefined>>, CyclicPerm>,
+    rift_hierarchy: Digraph,
+  }> {
     const crossing_state = indices(puzzle.branch_points.length).map(index => cross_relations.some(([i, j]) => i === index));
 
     // calculate transferred rift hierarchy
@@ -1047,8 +1064,7 @@ export namespace PrincipalPuzzle {
       const rift_index_ = rifts.findIndex(rift => rift.left === branch_point_index || rift.right === branch_point_index);
       assert(rift_index_ !== -1);
       if (isReachable(transferred_rift_hierarchy, rift_index, rift_index_)) {
-        console.warn("try to cross the rift above from below");
-        return undefined;
+        return Result.err("try to cross the rift above from below");
       }
       transferred_rift_hierarchy.push([rift_index_, rift_index]);
     }
@@ -1087,9 +1103,9 @@ export namespace PrincipalPuzzle {
     assert(isDAG(transferred_rift_hierarchy));
 
     // determine permutations around intersection points
-    const branch_point_perms: number[][] = [];
-    const intersection_above_perms = new Map<RiftIntersectionInfo, number[]>();
-    const intersection_below_perms = new Map<RiftIntersectionInfo, {prev:number[], post:number[]}>();
+    const branch_point_perms: CyclicPerm[] = [];
+    const intersection_above_perms = new Map<RiftIntersectionInfo, CyclicPerm>();
+    const intersection_below_perms = new Map<RiftIntersectionInfo, {prev:CyclicPerm, post:CyclicPerm}>();
     const sorted_rift_indices = indices(rifts.length)
       .sort(cmpOn(rift_index => [allReachable(transferred_rift_hierarchy, rift_index).size]));
     for (const rift_index of sorted_rift_indices) {
@@ -1102,7 +1118,7 @@ export namespace PrincipalPuzzle {
           if (info.above_pos[0] === rift_index) return [];
           const above_perm = intersection_above_perms.get(info);
           assert(above_perm !== undefined);
-          return info.ccw ? [...above_perm].reverse() : above_perm;
+          return info.ccw ? reverseCyclicPerm(above_perm) : above_perm;
         });
 
       // determine permutations around intersections of this rift
@@ -1119,17 +1135,17 @@ export namespace PrincipalPuzzle {
             intersection_above_perms.set(info, perm);
           } else {
             const prev = perm;
-            perm = cyclicSort(perm.map(v => applyPerm(cross_perm, 1, v)));
+            perm = applyCyclicPerm_(cross_perm, perm);
             const post = perm;
             assert(!intersection_below_perms.has(info));
             intersection_below_perms.set(info, {prev, post});
           }
         }
         branch_point_perms[rifts[rift_index].left] = left_perm;
-        branch_point_perms[rifts[rift_index].right] = reversePerm(perm);
+        branch_point_perms[rifts[rift_index].right] = reverseCyclicPerm(perm);
       } else {
         // from right
-        const right_perm = reversePerm(puzzle.branch_points[rifts[rift_index].right].perm);
+        const right_perm = reverseCyclicPerm(puzzle.branch_points[rifts[rift_index].right].perm);
         let perm = right_perm;
         for (const [info, cross_perm] of zip(sorted_intersections, cross_perms).reverse()) {
           if (info.above_pos[0] === rift_index) {
@@ -1137,29 +1153,27 @@ export namespace PrincipalPuzzle {
             intersection_above_perms.set(info, perm);
           } else {
             const post = perm;
-            perm = cyclicSort(perm.map(v => applyPerm(cross_perm, -1, v)));
+            perm = applyCyclicPerm_(reverseCyclicPerm(cross_perm), perm);
             const prev = perm;
             assert(!intersection_below_perms.has(info));
             intersection_below_perms.set(info, {prev, post});
           }
         }
         branch_point_perms[rifts[rift_index].left] = perm;
-        branch_point_perms[rifts[rift_index].right] = reversePerm(right_perm);
+        branch_point_perms[rifts[rift_index].right] = reverseCyclicPerm(right_perm);
       }
 
       // check permutations at branch points
       if (!left_crossing) {
         const index = rifts[rift_index].left;
         if (cmp(branch_point_perms[index], puzzle.branch_points[index].perm) !== 0) {
-          console.warn("branch point's permutation changes without crossing");
-          return undefined;
+          return Result.err("branch point's permutation changes without crossing");
         }
       }
       if (!right_crossing) {
         const index = rifts[rift_index].right;
         if (cmp(branch_point_perms[index], puzzle.branch_points[index].perm) !== 0) {
-          console.warn("branch point's permutation changes without crossing");
-          return undefined;
+          return Result.err("branch point's permutation changes without crossing");
         }
       }
     }
@@ -1178,7 +1192,7 @@ export namespace PrincipalPuzzle {
 
       const seg_perms = sorted_below_intersections
         .map(info => intersection_below_perms.get(info)!.post);
-      seg_perms.unshift(cyclicSort(branch_point_perms[rifts[rift_index].left]));
+      seg_perms.unshift(branch_point_perms[rifts[rift_index].left]);
 
       const rift_shape = rift_shapes[rift_index];
       assert(!rift_shape.is_closed);
@@ -1205,15 +1219,14 @@ export namespace PrincipalPuzzle {
     }
 
     // compute new rift hierarchy
-    const rift_hierarchy: [below:number, above:number][] = [];
+    const rift_hierarchy: Digraph = [];
     for (const info of rift_intersections) {
       const {prev, post} = intersection_below_perms.get(info)!;
       if (cmp(prev, post) === 0) continue;
       const below = info.below_pos[0];
       const above = info.above_pos[0];
       if (isReachable(rift_hierarchy, above, below)) {
-        console.warn("invalid hierarchy");
-        return undefined;
+        return Result.err("invalid hierarchy");
       }
       rift_hierarchy.push([below, above]);
     }
@@ -1222,26 +1235,26 @@ export namespace PrincipalPuzzle {
     const crossing_branch_point_perms = branch_point_perms
       .map((perm, i) => crossing_state[i] ? perm : undefined);
 
-    return {
+    return Result.ok({
       crossing_branch_point_perms,
       cutted_rift_shapes,
       rift_perms,
       rift_hierarchy,
-    };
+    });
   }
   function calculateCuttedRiftShapes(
     puzzle: PrincipalPuzzle,
     rifts: {left:number, right:number, coord:HyperbolicPolarCoordinate}[],
-  ): {
-    crossing_branch_point_perms: (number[] | undefined)[],
+  ): Result<{
+    crossing_branch_point_perms: (CyclicPerm | undefined)[],
     rel_angless: Geo.Angle[][],
     rift_shapes: Geo.Path<undefined>[],
     cutted_rift_shapes: Geo.Path<Geo.CutSourceSeg<undefined>>[],
-    rift_perms: Map<Geo.PathSeg<Geo.CutSourceSeg<undefined>>, number[]>,
-    rift_hierarchy: [below:number, above:number][],
-  } | undefined {
+    rift_perms: Map<Geo.PathSeg<Geo.CutSourceSeg<undefined>>, CyclicPerm>,
+    rift_hierarchy: Digraph,
+  }> {
     const res1 = computeRiftRelAngles(puzzle.branch_points, rifts);
-    if (res1 === undefined) return undefined;
+    if (!res1.ok) return res1;
     const rift_shapes = rifts.map(rift => {
       const left_point = puzzle.branch_points[rift.left].point;
       const right_point = puzzle.branch_points[rift.right].point;
@@ -1252,13 +1265,13 @@ export namespace PrincipalPuzzle {
         getInfRadius(puzzle, rift),
       );
     });
-    const res2 = cutRiftShapes(puzzle, rifts, rift_shapes, res1.cross_relations);
-    if (res2 === undefined) return undefined;
-    return {
-      ...res2,
-      rel_angless: res1.rel_angless,
+    const res2 = cutRiftShapes(puzzle, rifts, rift_shapes, res1.result.cross_relations);
+    if (!res2.ok) return res2;
+    return Result.ok({
+      ...res2.result,
+      rel_angless: res1.result.rel_angless,
       rift_shapes,
-    };
+    });
   }
 
   export function calculateClippedShapesAndUpdateOrders(
@@ -1275,37 +1288,37 @@ export namespace PrincipalPuzzle {
     function go(
       rifts: {left:number, right:number, coord:HyperbolicPolarCoordinate}[],
       n: number,
-    ): {
+    ): Result<{
       layers: Map<Piece, Geo.Path<Geo.CutSource<Edge, undefined>>[]>[],
       rifts: Geo.Path<undefined>[],
-      branch_points: {order:number[]|undefined, perm:number[]}[],
-    } | undefined {
+      branch_points: {order:number[]|undefined, perm:CyclicPerm}[],
+    }> {
       const res1 = calculateCuttedRiftShapes(puzzle, rifts);
-      if (res1 === undefined) return undefined;
-      const res2 = cutShapes(puzzle, shapes, res1.rift_shapes, n);
-      if (res2 === undefined) return undefined;
+      if (!res1.ok) return res1;
+      const res2 = cutShapes(puzzle, shapes, res1.result.rift_shapes);
+      if (!res2.ok) return res2;
       const res3 = determineLayers(
         puzzle,
         shapes,
-        res1.rift_shapes,
-        res2.cutted_shapes,
-        res1.cutted_rift_shapes,
-        res1.rift_perms,
-        res2.cutted_ramified_shapes,
-        n,
+        res1.result.rift_shapes,
+        res2.result.cutted_shapes,
+        res1.result.cutted_rift_shapes,
+        res1.result.rift_perms,
+        res2.result.cutted_ramified_shapes,
       );
-      if (res3 === undefined) return undefined;
-      const branch_points = zip(res1.crossing_branch_point_perms, res3.orders)
+      if (!res3.ok) return res3;
+      const branch_points = zip(res1.result.crossing_branch_point_perms, res3.result.orders)
       .map(([perm, order], i) => ({
         perm: perm ?? puzzle.branch_points[i].perm,
         order,
       }));
-      return {layers: res3.layers, rifts: res1.rift_shapes, branch_points};
+      return Result.ok({layers: res3.result.layers, rifts: res1.result.rift_shapes, branch_points});
     }
 
     let res = go(puzzle.rifts, 0);
     for (const n of indices(RETRY)) {
-      if (res !== undefined) break;
+      if (res.ok) break;
+      console.warn(`fail to clip path (${n}): ${res.error}`);
       const perturbation = {
         angle: (Math.random() - 0.5) * PERTURBATION,
         offset: (Math.random() - 0.5) * PERTURBATION,
@@ -1319,17 +1332,19 @@ export namespace PrincipalPuzzle {
           offset: coord.offset + perturbation.offset,
         },
       }));
-      // console.warn(`fail to calculate clipped shapes, try again with perturbation (${n})`, perturbation);
       res = go(perturb_rifts, n + 1);
     }
-    if (res === undefined) return undefined;
-    for (const [branch_point, {order, perm}] of zip(puzzle.branch_points, res.branch_points)) {
+    if (!res.ok) {
+      console.warn(`fail to clip path (${RETRY}): ${res.error}`);
+      return undefined;
+    }
+    for (const [branch_point, {order, perm}] of zip(puzzle.branch_points, res.result.branch_points)) {
       branch_point.order = order;
       branch_point.perm = perm;
     }
     return {
-      layers: res.layers,
-      rifts: res.rifts,
+      layers: res.result.layers,
+      rifts: res.result.rifts,
     };
   }
   function calculateRiftAngle(
@@ -1397,10 +1412,10 @@ export namespace PrincipalPuzzle {
     seg: Geo.PathSeg<Geo.CutSourceKnife<undefined>>,
     rift_shapes: Geo.Path<undefined>[],
     cutted_rift_shapes: Geo.Path<Geo.CutSourceSeg<undefined>>[],
-    rift_perms: Map<Geo.PathSeg<Geo.CutSourceSeg<undefined>>, number[]>,
+    rift_perms: Map<Geo.PathSeg<Geo.CutSourceSeg<undefined>>, CyclicPerm>,
     cutted_shapes: Map<Piece, Geo.Path<Geo.CutSource<Edge, undefined>>[]>,
-  ): [Geo.Path<Geo.CutSource<Edge, undefined>>, number[]][] {
-    const res: [Geo.Path<Geo.CutSource<Edge, undefined>>, number[]][] = [];
+  ): [Geo.Path<Geo.CutSource<Edge, undefined>>, CyclicPerm][] {
+    const res: [Geo.Path<Geo.CutSource<Edge, undefined>>, CyclicPerm][] = [];
 
     const rift_seg = seg.source.ref;
     const rift_index = rift_shapes.findIndex(path => path.segs.includes(rift_seg));
@@ -1417,7 +1432,7 @@ export namespace PrincipalPuzzle {
     }
     assert(piece !== undefined);
 
-    const ranges_perms: {range:[from:number, to:number], perm:number[]}[] = [];
+    const ranges_perms: {range:[from:number, to:number], perm:CyclicPerm}[] = [];
     {
       const [src_from, src_to] =
         seg.source.type === Geo.CutSourceType.LeftCut ?
@@ -1437,7 +1452,7 @@ export namespace PrincipalPuzzle {
         const perm =
           seg.source.type === Geo.CutSourceType.RightCut ?
             [...rift_perms.get(cutted_rift_seg)!]
-          : cyclicSort([...rift_perms.get(cutted_rift_seg)!].reverse());
+          : reverseCyclicPerm(rift_perms.get(cutted_rift_seg)!);
         
         ranges_perms.push({range:[from_, to_], perm});
       }
@@ -1473,11 +1488,10 @@ export namespace PrincipalPuzzle {
     puzzle: PrincipalPuzzle,
     shapes: Map<Piece, Geo.Path<Edge>>,
     rift_shapes: Geo.Path<undefined>[],
-    n: number = 0,
-  ): {
+  ): Result<{
     cutted_shapes: Map<Piece, Geo.Path<Geo.CutSource<Edge, undefined>>[]>,
     cutted_ramified_shapes: Geo.Path<Geo.CutSource<Edge, undefined>>[][],
-  } | undefined {
+  }> {
     const ANG_EPS = 1e-3;
     const POS_EPS = 1e-3;
 
@@ -1487,7 +1501,7 @@ export namespace PrincipalPuzzle {
       shapes: Geo.Path<Geo.CutSource<Edge, undefined>>[],
       rift_shapes: Geo.Path<undefined>[],
       name: string,
-    ): Geo.Path<Geo.CutSource<Edge, undefined>>[] | undefined {
+    ): Result<Geo.Path<Geo.CutSource<Edge, undefined>>[]> {
       const INSIDE_DIS = -1e-3;
 
       for (const rift_shape of rift_shapes) {
@@ -1495,8 +1509,7 @@ export namespace PrincipalPuzzle {
         for (const shape of shapes) {
           const res = Geo.cutRegion(shape, rift_shape);
           if (res === undefined) {
-            console.warn(`fail to clip path (${n}): fail to cut piece ${name}`);
-            return undefined;
+            return Result.err(`fail to cut piece ${name}`);
           }
           const dis1 = Geo.calculateNearestPoint(shape, Geo.getStartPoint(rift_shape)).dis;
           const dis2 = Geo.calculateNearestPoint(shape, Geo.getEndPoint(rift_shape)).dis;
@@ -1504,15 +1517,14 @@ export namespace PrincipalPuzzle {
             shapes_.push(...res.map(path => Geo.flattenCut(Geo.glueIncompleteCut(path, rift_shape))));
             
           } else if (res.some(path => Geo.hasIncompleteCut(path, rift_shape))) {
-            console.warn(`fail to clip path (${n}): fail to cut piece ${name}`);
-            return undefined;
+            return Result.err(`fail to cut piece ${name}`);
           } else {
             shapes_.push(...res.map(path => Geo.flattenCut(path)));
           }
         }
         shapes = shapes_;
       }
-      return shapes;
+      return Result.ok(shapes);
     }
 
     // cut normal pieces
@@ -1521,8 +1533,8 @@ export namespace PrincipalPuzzle {
       if (puzzle.ramified.some(ramified => ramified.pieces.includes(piece))) continue;
 
       const res = cut([Geo.cutNothing(shape)], rift_shapes, piece.name);
-      if (res === undefined) return undefined;
-      append(cutted_shapes, piece, res);
+      if (!res.ok) return res;
+      append(cutted_shapes, piece, res.result);
     }
 
     // cut ramified pieces
@@ -1557,8 +1569,7 @@ export namespace PrincipalPuzzle {
           .map(n => mod(cut_angle + Math.PI*2 * n, Math.PI*2 * ramified.turn))
           .map(ramified_angle => angle_upperbounds.findIndex(upperbound => ramified_angle < upperbound));
         if (ramified_piece_indices.includes(-1)) {
-          console.warn(`fail to clip path (${n}): fail to cut ramified pieces`);
-          return undefined;
+          return Result.err(`fail to cut ramified pieces`);
         }
       }
 
@@ -1575,25 +1586,23 @@ export namespace PrincipalPuzzle {
           considered_as_incident: ramified_piece_indices.includes(index),
         });
         if (res0 === undefined) {
-          console.warn(`fail to clip path (${n}): fail to cut ramified piece: ${piece.name}`);
-          return undefined;
+          return Result.err(`fail to cut ramified piece: ${piece.name}`);
         }
         if (res0.some(path => Geo.hasIncompleteCut(path, rift_shape))) {
-          console.warn(`fail to clip path (${n}): fail to cut ramified piece: ${piece.name}`);
-          return undefined;
+          return Result.err(`fail to cut ramified piece: ${piece.name}`);
         }
 
         // cut by other rifts
         const res = cut(res0, rift_shapes.filter((_, i) => i !== rift_index), piece.name);
-        if (res === undefined) return undefined;
-        append(cutted_shapes, piece, res);
+        if (!res.ok) return res;
+        append(cutted_shapes, piece, res.result);
 
         // assign cutted subpiece
         const turn = ramified_piece_indices.indexOf(index);
         if (turn !== -1) {
           const cutted_shape =
             rift_side ?
-              res.find(path =>
+              res.result.find(path =>
                 path.segs.some(seg =>
                   seg.source.type === Geo.CutSourceType.LeftCut
                   && seg.source.ref === rift_shape.segs[0]
@@ -1601,7 +1610,7 @@ export namespace PrincipalPuzzle {
                 )
               )
             :
-              res.find(path =>
+              res.result.find(path =>
                 path.segs.some(seg =>
                   seg.source.type === Geo.CutSourceType.RightCut
                   && seg.source.ref === rift_shape.segs[rift_shape.segs.length - 1]
@@ -1609,14 +1618,13 @@ export namespace PrincipalPuzzle {
                 )
               );
           if (cutted_shape === undefined) {
-            console.warn(`cannot find cutted ramified piece: ${piece.name}`);
-            return undefined;
+            return Result.err(`cannot find cutted ramified piece: ${piece.name}`);
           }
           cutted_ramified_shapes[i][turn] = cutted_shape;
         }
       }
     }
-    return { cutted_shapes, cutted_ramified_shapes };
+    return Result.ok({ cutted_shapes, cutted_ramified_shapes });
   }
   function determineLayers(
     puzzle: PrincipalPuzzle,
@@ -1624,13 +1632,12 @@ export namespace PrincipalPuzzle {
     rift_shapes: Geo.Path<undefined>[],
     cutted_shapes: Map<Piece, Geo.Path<Geo.CutSource<Edge, undefined>>[]>,
     cutted_rift_shapes: Geo.Path<Geo.CutSourceSeg<undefined>>[],
-    rift_perms: Map<Geo.PathSeg<Geo.CutSourceSeg<undefined>>, number[]>,
+    rift_perms: Map<Geo.PathSeg<Geo.CutSourceSeg<undefined>>, CyclicPerm>,
     cutted_ramified_shapes: Geo.Path<Geo.CutSource<Edge, undefined>>[][],
-    n: number = 0,
-  ): {
+  ): Result<{
     layers: Map<Piece, Geo.Path<Geo.CutSource<Edge, undefined>>[]>[],
     orders: (number[] | undefined)[],
-  } | undefined {
+  }> {
     const cutted_shapes_layer = new Map<Geo.Path<Geo.CutSource<Edge, undefined>>, number>();
     for (const [branch_point, cutted_shapes] of zip(puzzle.branch_points, cutted_ramified_shapes)) {
       if (branch_point.order !== undefined) {
@@ -1652,28 +1659,24 @@ export namespace PrincipalPuzzle {
           const perm = puzzle.branch_points[ramified_index].perm;
           const turn_ = perm.indexOf(layer_index);
           if (turn_ === -1) {
-            console.warn(`fail to clip path (${n}): conflict layer`);
-            return undefined;
+            return Result.err(`conflict layer: layer ${layer_index} is not in perm=[${perm}] of ${ramified_index}-th branch point`);
           }
           order = rotate(perm, turn_ - turn);
         } else {
           order = puzzle.branch_points[ramified_index].order;
           const turn_ = order.indexOf(layer_index);
           if (turn_ === -1) {
-            console.warn(`fail to clip path (${n}): conflict layer`);
-            return undefined;
+            return Result.err(`conflict layer: layer ${layer_index} is not in order=[${order}] of ${ramified_index}-th branch point`);
           }
           if (turn_ !== turn) {
-            console.warn(`fail to clip path (${n}): conflict layer`);
-            return undefined;
+            return Result.err(`conflict layer: layer ${layer_index} is not ${turn}-th element of order=[${order}] of ${ramified_index}-th branch point`);
           }
         }
 
         for (const [cutted_shape, turn_layer_index] of zip(cutted_ramified_shapes[ramified_index], order)) {
           if (cutted_shapes_layer.has(cutted_shape)) {
             if (cutted_shapes_layer.get(cutted_shape) !== turn_layer_index) {
-              console.warn(`fail to clip path (${n}): conflict layer`);
-              return undefined;
+              return Result.err(`conflict layer: (determined by turn) ${turn_layer_index} != ${cutted_shapes_layer.get(cutted_shape)} in ${ramified_index}-th branch point`);
             }
           } else {
             cutted_shapes_layer.set(cutted_shape, turn_layer_index);
@@ -1686,7 +1689,7 @@ export namespace PrincipalPuzzle {
       }
 
       for (const seg of path.segs) {
-        let adj_paths: [Geo.Path<Geo.CutSource<Edge, undefined>>, number[]][];
+        let adj_paths: [Geo.Path<Geo.CutSource<Edge, undefined>>, CyclicPerm | undefined][];
         if (seg.source.type === Geo.CutSourceType.Seg) {
           // find adjacent edges
           adj_paths = getAdjacentSegs(
@@ -1695,7 +1698,7 @@ export namespace PrincipalPuzzle {
             shapes,
             cutted_shapes,
           )
-          .map(adj_path => [adj_path, []]);
+          .map(adj_path => [adj_path, undefined]);
         } else {
           // find adjacent edges
           adj_paths = getAdjacentRiftSegs(
@@ -1708,11 +1711,14 @@ export namespace PrincipalPuzzle {
         }
 
         for (const [adj_path, perm] of adj_paths) {
-          const adj_layer_index = applyPerm(perm, 1, layer_index);
+          const adj_layer_index = applyCyclicPerm(perm ?? [], 1, layer_index);
           if (cutted_shapes_layer.has(adj_path)) {
             if (cutted_shapes_layer.get(adj_path) !== adj_layer_index) {
-              console.warn(`fail to clip path (${n}): conflict layer`);
-              return undefined;
+              if (perm === undefined) {
+                return Result.err(`conflict layer: (determined by edge adjacency) ${adj_layer_index} != ${cutted_shapes_layer.get(adj_path)}`);
+              } else {
+                return Result.err(`conflict layer: (determined by cut adjacency) ${adj_layer_index} != ${cutted_shapes_layer.get(adj_path)}`);
+              }
             }
           } else {
             cutted_shapes_layer.set(adj_path, adj_layer_index);
@@ -1736,28 +1742,27 @@ export namespace PrincipalPuzzle {
       }
     }
     if (unclassified.size > 0) {
-      console.warn(`fail to clip path (${n}): ${unclassified.size} shapes are not classified into any layer`);
+      console.warn(`${unclassified.size} shapes are not classified into any layer`);
     }
 
     if (orders.some(order => order === undefined)) {
-      console.warn(`fail to clip path (${n}): some orders on branch points cannot be determined`);
+      console.warn(`some orders on branch points cannot be determined`);
     }
     
-    return {
+    return Result.ok({
       layers,
       orders,
-    };
+    });
   }
   
   function updateRiftRelAngles(puzzle: PrincipalPuzzle): boolean {
     const RETRY = 5;
     const PERTURBATION = 1e-4;
 
-    const shapes = Puzzle.calculateShapes(puzzle);
-
     let res = calculateCuttedRiftShapes(puzzle, puzzle.rifts);
     for (const n of indices(RETRY)) {
-      if (res !== undefined) break;
+      if (res.ok) break;
+      console.warn(`fail to cut rifts (${n}): ${res.error}`);
       const perturbation = {
         angle: (Math.random() - 0.5) * PERTURBATION,
         offset: (Math.random() - 0.5) * PERTURBATION,
@@ -1773,28 +1778,29 @@ export namespace PrincipalPuzzle {
       }));
       res = calculateCuttedRiftShapes(puzzle, perturb_rifts);
     }
-    if (res === undefined) {
+    if (!res.ok) {
+      console.warn(`fail to cut rifts (${RETRY}): ${res.error}`);
       console.error("fail to update rift rel angles");
       return false;
     }
 
-    for (const [branch_point, rel_angles] of zip(puzzle.branch_points, res.rel_angless)) {
+    for (const [branch_point, rel_angles] of zip(puzzle.branch_points, res.result.rel_angless)) {
       branch_point.rel_angles = rel_angles;
     }
-    for (const [branch_point, perm] of zip(puzzle.branch_points, res.crossing_branch_point_perms)) {
+    for (const [branch_point, perm] of zip(puzzle.branch_points, res.result.crossing_branch_point_perms)) {
       if (perm !== undefined) {
         branch_point.order = undefined;
         branch_point.perm = perm;
       }
     }
-    puzzle.rift_hierarchy = res.rift_hierarchy;
+    puzzle.rift_hierarchy = res.result.rift_hierarchy;
     
     return true;
   }
   export function setShift(puzzle: PrincipalPuzzle, side: boolean, sheet: number, angle: Geo.Angle): boolean {
     const ANGLE_MAX_STEP: Geo.Angle = Math.PI/30;
 
-    const twist_pieces = Puzzle.getTwistPieces(puzzle, side, sheet);
+    const twist_pieces = AbstractPuzzle.getTwistPieces(puzzle, side, sheet);
     if (twist_pieces === undefined) return false;
     const {pieces, sheets} = twist_pieces;
 
@@ -1828,14 +1834,14 @@ export namespace PrincipalPuzzle {
       puzzle.branch_points[i].point = moved_points[i];
     }
 
-    Puzzle.setShift(puzzle, side, sheets, angle);
+    AbstractPuzzle.setShift(puzzle, side, sheets, angle);
 
     updateRiftRelAngles(puzzle);
 
     return true;
   }
   export function snap(puzzle: PrincipalPuzzle): {side:boolean, sheets:Set<number>, turn:number}[] {
-    return Puzzle.snap(puzzle);
+    return AbstractPuzzle.snap(puzzle);
   }
   export function setRift(puzzle: PrincipalPuzzle, index: number, coord: HyperbolicPolarCoordinate): boolean {
     const ANGLE_MAX_STEP: Geo.Angle = Math.PI/3;
@@ -1873,20 +1879,18 @@ export type PrincipalPuzzleWithTexture<Image> = PrincipalPuzzle & {
   textures: Image[];
 };
 
-export type PrincipalPuzzleWithTextureFactory = PrincipalPuzzleFactory & {
-  make_texture_functions: (puzzle: PrincipalPuzzle) => Complex.ComplexFunction[],
+export type PrincipalPuzzleWithTextureBuilder = PrincipalPuzzleBuilder & {
+  make_texture_functions: (puzzle: PrincipalPuzzle) => Complex.ComplexFunction[];
   determine_texture_indices: (puzzle: PrincipalPuzzle) => Map<Piece, number>;
 };
 
 export namespace PrincipalPuzzleWithTexture {
   export function makePuzzle<Image>(
-    factory: PrincipalPuzzleWithTextureFactory,
-    radius: Geo.Distance,
-    center_x: Geo.Distance,
-    R: Geo.Distance,
+    factory: PrincipalPuzzleWithTextureBuilder,
+    shape: PuzzleShape,
     draw_image: (f: Complex.ComplexFunction) => Image,
   ): PrincipalPuzzleWithTexture<Image> {
-    const puzzle = PrincipalPuzzle.makePuzzle(factory, radius, center_x, R);
+    const puzzle = PrincipalPuzzle.makePuzzle(factory, shape);
     const textures = factory.make_texture_functions(puzzle).map(draw_image);
     const unshifted_positions = new Map(puzzle.pieces.map(piece => [piece, Geo.id_trans()]));
     const texture_indices = factory.determine_texture_indices(puzzle);
@@ -1903,7 +1907,7 @@ export namespace PrincipalPuzzleWithTexture {
     const positions = new Map(puzzle.unshifted_positions);
     for (const trans of Puzzle.getShiftTransformations(puzzle)) {
       const [sheet] = trans.sheets;
-      for (const piece of Puzzle.getTwistPieces(puzzle, trans.side, sheet)!.pieces)
+      for (const piece of AbstractPuzzle.getTwistPieces(puzzle, trans.side, sheet)!.pieces)
         positions.set(piece, Geo.compose(positions.get(piece)!, trans.trans));
     }
     return positions;
@@ -1954,7 +1958,7 @@ export namespace PrincipalPuzzleWithTexture {
         twist_trans = Geo.compose(twist_trans, twist_trans1);
 
       const [sheet] = sheets;
-      for (const piece of Puzzle.getTwistPieces(puzzle, side, sheet)!.pieces) {
+      for (const piece of AbstractPuzzle.getTwistPieces(puzzle, side, sheet)!.pieces) {
         let trans = puzzle.unshifted_positions.get(piece)!;
         trans = Geo.compose(trans, twist_trans);
         puzzle.unshifted_positions.set(piece, trans);
@@ -1971,7 +1975,7 @@ export namespace Textures {
   export function getDHTextureFunction(
     puzzle: PrincipalPuzzle,
     turn: number,
-    scale: number,
+    colorscale: number,
   ): Complex.ComplexFunction[] {
     const d = puzzle.center_x;
     
@@ -1981,13 +1985,13 @@ export namespace Textures {
         Complex.pow(Complex.add(z, Complex.c(+d, 0)), 1/turn),
         Complex.pow(Complex.add(z, Complex.c(-d, 0)), (turn-1)/turn),
         Complex.omega(i/turn),
-        Complex.c(scale, 0),
+        Complex.c(colorscale, 0),
       ));
       fns.push((z: Complex.ComplexNumber) => Complex.mul(
         Complex.pow(Complex.add(z, Complex.c(+d, 0)), 1/turn),
         Complex.pow(Complex.mul(Complex.add(z, Complex.c(-d, 0)), Complex.c(-1, 0)), (turn-1)/turn),
         Complex.omega((turn+1+2*i)/turn/2),
-        Complex.c(scale, 0),
+        Complex.c(colorscale, 0),
       ));
     }
     
@@ -1997,7 +2001,7 @@ export namespace Textures {
   export function getDVTextureFunction(
     puzzle: PrincipalPuzzle,
     turn: number,
-    scale: number,
+    colorscale: number,
   ): Complex.ComplexFunction[] {
     const d = puzzle.center_x / Math.sqrt(3);
     
@@ -2007,13 +2011,13 @@ export namespace Textures {
         Complex.pow(Complex.add(Complex.mul(z, Complex.c(0, +1)), Complex.c(+d, 0)), 1/turn),
         Complex.pow(Complex.add(Complex.mul(z, Complex.c(0, +1)), Complex.c(-d, 0)), (turn-1)/turn),
         Complex.omega(i/turn),
-        Complex.c(scale, 0),
+        Complex.c(colorscale, 0),
       ));
       fns.push((z: Complex.ComplexNumber) => Complex.mul(
         Complex.pow(Complex.add(Complex.mul(z, Complex.c(0, +1)), Complex.c(+d, 0)), 1/turn),
         Complex.pow(Complex.mul(Complex.c(-1, 0), Complex.add(Complex.mul(z, Complex.c(0, +1)), Complex.c(-d, 0))), (turn-1)/turn),
         Complex.omega((turn+1+2*i)/turn/2),
-        Complex.c(scale, 0),
+        Complex.c(colorscale, 0),
       ));
     }
     
@@ -2023,7 +2027,7 @@ export namespace Textures {
   export function getQTextureFunction(
     puzzle: PrincipalPuzzle,
     turn: number,
-    scale: number,
+    colorscale: number,
   ): Complex.ComplexFunction[] {
     const d1 = puzzle.center_x;
     const d2 = puzzle.center_x / Math.sqrt(3);
@@ -2036,7 +2040,7 @@ export namespace Textures {
         Complex.pow(Complex.add(Complex.mul(z, Complex.c(0, +1)), Complex.c(+d2, 0)), 1/turn),
         Complex.pow(Complex.add(Complex.mul(z, Complex.c(0, +1)), Complex.c(-d2, 0)), (turn-1)/turn),
         Complex.omega(i/turn),
-        Complex.c(scale, 0),
+        Complex.c(colorscale, 0),
       ));
       fns.push((z: Complex.ComplexNumber) => Complex.mul(
         Complex.pow(Complex.add(z, Complex.c(+d1, 0)), 1/turn),
@@ -2044,7 +2048,7 @@ export namespace Textures {
         Complex.pow(Complex.add(Complex.mul(z, Complex.c(0, +1)), Complex.c(+d2, 0)), 1/turn),
         Complex.pow(Complex.mul(Complex.c(-1, 0), Complex.add(Complex.mul(z, Complex.c(0, +1)), Complex.c(-d2, 0))), (turn-1)/turn),
         Complex.omega((i+1)/turn),
-        Complex.c(scale, 0),
+        Complex.c(colorscale, 0),
       ));
     }
     
@@ -2053,7 +2057,7 @@ export namespace Textures {
 
   export function getDDTextureFunction(
     puzzle: PrincipalPuzzle,
-    scale: number,
+    colorscale: number,
   ): Complex.ComplexFunction[] {
     const d1 = puzzle.center_x;
     const d2 = puzzle.center_x/Math.sqrt(3);
@@ -2064,7 +2068,7 @@ export namespace Textures {
         Complex.pow(Complex.add(z, Complex.c(-d1, 0)), 1/2),
         Complex.pow(Complex.add(Complex.mul(z, Complex.c(0, +1)), Complex.c(+d2, 0)), 1/2),
         Complex.pow(Complex.add(Complex.mul(z, Complex.c(0, -1)), Complex.c(+d2, 0)), 1/2),
-        Complex.c(scale, 0),
+        Complex.c(colorscale, 0),
       );
 
     const f2 = (z: Complex.ComplexNumber) =>
@@ -2073,7 +2077,7 @@ export namespace Textures {
         Complex.pow(Complex.add(z, Complex.c(-d1, 0)), 1/2),
         Complex.abs(Complex.add(z, Complex.c(0, (z[1] >= 0 ? +1 : -1)*d2))),
         Complex.c(-1, 0),
-        Complex.c(scale, 0),
+        Complex.c(colorscale, 0),
       );
 
     const f3 = (z: Complex.ComplexNumber) =>
@@ -2083,7 +2087,7 @@ export namespace Textures {
         Complex.pow(Complex.add(Complex.mul(z, Complex.c(0, -1)), Complex.c(+d2, 0)), 1/2),
         Complex.normalize(z),
         Complex.c(-1, 0),
-        Complex.c(scale, 0),
+        Complex.c(colorscale, 0),
       );
 
     const f12 = (z: Complex.ComplexNumber) => (z[1] < 0) ? f1(z) : f2(z);
@@ -2095,11 +2099,11 @@ export namespace Textures {
   }
 }
 
-export namespace Factory {
-  export function DH(turn: number, scale: number): PrincipalPuzzleWithTextureFactory {
+export namespace Builder {
+  export function DH(turn: number, colorscale: number): PrincipalPuzzleWithTextureBuilder {
     return {
       make_pieces: () => {
-        const layers = indices(turn).map(i => Puzzle.makePieces(`_${i}`));
+        const layers = indices(turn).map(i => AbstractPuzzle.makePieces(`_${i}`));
         
         const piece50Ls = layers.map(layer => Edge.walk(layer.stand, [0, 1, -1, 1, 0]).aff);
         const pieceCLs = layers.map(layer => Edge.walk(layer.stand, [0, 1, -1, 1]).aff);
@@ -2108,14 +2112,14 @@ export namespace Factory {
         // ramify center pieces
 
         // ramified_pieceCLs[0].edges[1]: the edge from the bottom sheet to the top sheet
-        const ramified_pieceCLs = Puzzle.chunkPiece("CL", Puzzle.ramifyPiece("", pieceCLs, 0), 2);
+        const ramified_pieceCLs = AbstractPuzzle.chunkPiece("CL", AbstractPuzzle.ramifyPiece("", pieceCLs, 0), 2);
 
         // ramified_pieceCRs[0].edges[1]: the edge from the second sheet to the top sheet
-        const ramified_pieceCRs = Puzzle.chunkPiece("CR", Puzzle.ramifyPiece("", rotate(pieceCRs, 1).reverse(), 0), 2);
+        const ramified_pieceCRs = AbstractPuzzle.chunkPiece("CR", AbstractPuzzle.ramifyPiece("", rotate(pieceCRs, 1).reverse(), 0), 2);
 
         // piece50Ls[0].edges[0]: the edge from the second sheet to the top sheet
-        Puzzle.swapAdj(...piece50Ls.map(piece => piece.edges[0]));
-        Puzzle.swapAdj(...piece50Ls.map(piece => piece.edges[3]));
+        AbstractPuzzle.swapAdj(...piece50Ls.map(piece => piece.edges[0]));
+        AbstractPuzzle.swapAdj(...piece50Ls.map(piece => piece.edges[3]));
         
         const pieces = layers.flatMap(layer => layer.pieces)
           .filter(p => !pieceCLs.includes(p) && !pieceCRs.includes(p))
@@ -2128,11 +2132,11 @@ export namespace Factory {
           ramified: [{pieces:ramified_pieceCLs, turn}, {pieces:ramified_pieceCRs, turn}],
         };
       },
-      make_rifts: (radius: Geo.Distance, center_x: Geo.Distance, R: Geo.Distance) => {
+      make_rifts: (shape: PuzzleShape) => {
         return {
           branch_points: [
-            {point: [-center_x, 0], cut_angle: Math.PI/6, order: indices(turn)},
-            {point: [center_x, 0], cut_angle: Math.PI/6, order: rotate(indices(turn), 1).reverse()},
+            {point: [-shape.center_x, 0], cut_angle: Math.PI/6, order: indices(turn)},
+            {point: [shape.center_x, 0], cut_angle: Math.PI/6, order: rotate(indices(turn), 1).reverse()},
           ],
           rifts: [
             {left:0, right:1, coord:{offset:0.0, angle:0.0}}
@@ -2140,19 +2144,19 @@ export namespace Factory {
           rift_hierarchy: [],
         };
       },
-      make_texture_functions: puzzle => Textures.getDHTextureFunction(puzzle, turn, scale),
+      make_texture_functions: puzzle => Textures.getDHTextureFunction(puzzle, turn, colorscale),
       determine_texture_indices: (puzzle: PrincipalPuzzle) => {
         const texture_indices = new Map<Piece, number>();
         for (const sheet of indices(puzzle.stands.length)) {
           const texture_index = mod(2*sheet-1, 2*puzzle.stands.length);
-          const edgeCL = Puzzle.edgeAt(puzzle, sheet, [0, 1, -1, 1]);
+          const edgeCL = AbstractPuzzle.edgeAt(puzzle, sheet, [0, 1, -1, 1]);
           texture_indices.set(edgeCL.aff, texture_index);
           texture_indices.set(Edge.walk(edgeCL, [0]).aff, texture_index);
           texture_indices.set(Edge.walk(edgeCL, [0, 2]).aff, texture_index);
         }
         for (const sheet of indices(puzzle.stands.length)) {
           const layer = new Set<Piece>();
-          layer.add(Puzzle.edgeAt(puzzle, sheet, []).aff);
+          layer.add(AbstractPuzzle.edgeAt(puzzle, sheet, []).aff);
           for (const piece of layer) {
             for (const edge of piece.edges) {
               const adj_piece = edge.adj.aff;
@@ -2170,10 +2174,10 @@ export namespace Factory {
     };
   }
 
-  export function DV(turn: number, scale: number): PrincipalPuzzleWithTextureFactory {
+  export function DV(turn: number, colorscale: number): PrincipalPuzzleWithTextureBuilder {
     return {
       make_pieces: () => {
-        const layers = indices(turn).map(i => Puzzle.makePieces(`_${i}`));
+        const layers = indices(turn).map(i => AbstractPuzzle.makePieces(`_${i}`));
         
         const piece50Ls = layers.map(layer => Edge.walk(layer.stand, [0, 1, -1, 1, 0]).aff);
         const piece0Ls = layers.map(layer => Edge.walk(layer.stand, [0, 1]).aff);
@@ -2182,14 +2186,14 @@ export namespace Factory {
         // ramify corner pieces
 
         // ramified_piece0Ls[0].edges[1]: the edge from the bottom sheet to the top sheet
-        const ramified_piece0Ls = Puzzle.chunkPiece("0L", Puzzle.ramifyPiece("", piece0Ls, 0), 1);
+        const ramified_piece0Ls = AbstractPuzzle.chunkPiece("0L", AbstractPuzzle.ramifyPiece("", piece0Ls, 0), 1);
 
         // ramified_piece0Rs[0].edges[1]: the edge from the second sheet to the top sheet
-        const ramified_piece0Rs = Puzzle.chunkPiece("0R", Puzzle.ramifyPiece("", rotate(piece0Rs, 1).reverse(), 0), 1);
+        const ramified_piece0Rs = AbstractPuzzle.chunkPiece("0R", AbstractPuzzle.ramifyPiece("", rotate(piece0Rs, 1).reverse(), 0), 1);
 
         // piece50Ls[0].edges[3]: the edge from the second sheet to the top sheet
-        Puzzle.swapAdj(...piece50Ls.map(piece => piece.edges[3]));
-        Puzzle.swapAdj(...piece50Ls.map(piece => piece.edges[2]));
+        AbstractPuzzle.swapAdj(...piece50Ls.map(piece => piece.edges[3]));
+        AbstractPuzzle.swapAdj(...piece50Ls.map(piece => piece.edges[2]));
         
         const pieces = layers.flatMap(layer => layer.pieces)
           .filter(p => !piece0Ls.includes(p) && !piece0Rs.includes(p))
@@ -2202,11 +2206,11 @@ export namespace Factory {
           ramified: [{pieces:ramified_piece0Ls, turn}, {pieces:ramified_piece0Rs, turn}],
         };
       },
-      make_rifts: (radius: Geo.Distance, center_x: Geo.Distance, R: Geo.Distance) => {
+      make_rifts: (shape: PuzzleShape) => {
         return {
           branch_points: [
-            {point: [0, center_x/Math.sqrt(3)], cut_angle: Math.PI/3, order: indices(turn)},
-            {point: [0, -center_x/Math.sqrt(3)], cut_angle: Math.PI/3, order: rotate(indices(turn), 1).reverse()},
+            {point: [0, shape.center_x/Math.sqrt(3)], cut_angle: Math.PI/3, order: indices(turn)},
+            {point: [0, -shape.center_x/Math.sqrt(3)], cut_angle: Math.PI/3, order: rotate(indices(turn), 1).reverse()},
           ],
           rifts: [
             {left:0, right:1, coord:{offset:0.0, angle:0.0}}
@@ -2214,19 +2218,19 @@ export namespace Factory {
           rift_hierarchy: [],
         };
       },
-      make_texture_functions: puzzle => Textures.getDVTextureFunction(puzzle, turn, scale),
+      make_texture_functions: puzzle => Textures.getDVTextureFunction(puzzle, turn, colorscale),
       determine_texture_indices: (puzzle: PrincipalPuzzle) => {
         const texture_indices = new Map<Piece, number>();
         for (const sheet of indices(puzzle.stands.length)) {
           const texture_index = mod(2*sheet-1, 2*puzzle.stands.length);
-          const edge0L = Puzzle.edgeAt(puzzle, sheet, [0, 1, -1, 0]);
+          const edge0L = AbstractPuzzle.edgeAt(puzzle, sheet, [0, 1, -1, 0]);
           texture_indices.set(edge0L.aff, texture_index);
           texture_indices.set(Edge.walk(edge0L, [0]).aff, texture_index);
           texture_indices.set(Edge.walk(edge0L, [0, 2]).aff, texture_index);
         }
         for (const sheet of indices(puzzle.stands.length)) {
           const layer = new Set<Piece>();
-          layer.add(Puzzle.edgeAt(puzzle, sheet, []).aff);
+          layer.add(AbstractPuzzle.edgeAt(puzzle, sheet, []).aff);
           for (const piece of layer) {
             for (const edge of piece.edges) {
               const adj_piece = edge.adj.aff;
@@ -2244,10 +2248,10 @@ export namespace Factory {
     };
   }
 
-  export function Q(turn: number, scale: number): PrincipalPuzzleWithTextureFactory {
+  export function Q(turn: number, colorscale: number): PrincipalPuzzleWithTextureBuilder {
     return {
       make_pieces: () => {
-        const layers = indices(turn).map(i => Puzzle.makePieces(`_${i}`));
+        const layers = indices(turn).map(i => AbstractPuzzle.makePieces(`_${i}`));
         
         const piece50Ls = layers.map(layer => Edge.walk(layer.stand, [0, 1, -1, 1, 0]).aff);
         const pieceCLs = layers.map(layer => Edge.walk(layer.stand, [0, 1, -1, 1]).aff);
@@ -2258,25 +2262,25 @@ export namespace Factory {
         // ramify center pieces
 
         // ramified_pieceCLs[0].edges[1]: the edge from the bottom sheet to the top sheet
-        const ramified_pieceCLs = Puzzle.chunkPiece("CL", Puzzle.ramifyPiece("", pieceCLs, 0), 2);
+        const ramified_pieceCLs = AbstractPuzzle.chunkPiece("CL", AbstractPuzzle.ramifyPiece("", pieceCLs, 0), 2);
 
         // ramified_pieceCRs[0].edges[1]: the edge from the second sheet to the top sheet
-        const ramified_pieceCRs = Puzzle.chunkPiece("CR", Puzzle.ramifyPiece("", rotate(pieceCRs, 1).reverse(), 0), 2);
+        const ramified_pieceCRs = AbstractPuzzle.chunkPiece("CR", AbstractPuzzle.ramifyPiece("", rotate(pieceCRs, 1).reverse(), 0), 2);
 
         // ramify corner pieces
 
         // ramified_piece0Ls[0].edges[1]: the edge from the bottom sheet to the top sheet
-        const ramified_piece0Ls = Puzzle.chunkPiece("0L", Puzzle.ramifyPiece("", piece0Ls, 0), 1);
+        const ramified_piece0Ls = AbstractPuzzle.chunkPiece("0L", AbstractPuzzle.ramifyPiece("", piece0Ls, 0), 1);
 
         // ramified_piece0Rs[0].edges[1]: the edge from the second sheet to the top sheet
-        const ramified_piece0Rs = Puzzle.chunkPiece("0R", Puzzle.ramifyPiece("", rotate(piece0Rs, 1).reverse(), 0), 1);
+        const ramified_piece0Rs = AbstractPuzzle.chunkPiece("0R", AbstractPuzzle.ramifyPiece("", rotate(piece0Rs, 1).reverse(), 0), 1);
 
         // piece50Ls[0].edges[0]: the edge from the top sheet to the bottom sheet
         // piece50Ls[0].edges[1]: the edge from the bottom sheet to the top sheet
         // piece50Ls[0].edges[2]: the edge from the top sheet to the second sheet
         // piece50Ls[0].edges[3]: the edge from the second sheet to the top sheet
-        Puzzle.swapAdj(...piece50Ls.map(piece => piece.edges[1]).reverse());
-        Puzzle.swapAdj(...piece50Ls.map(piece => piece.edges[3]));
+        AbstractPuzzle.swapAdj(...piece50Ls.map(piece => piece.edges[1]).reverse());
+        AbstractPuzzle.swapAdj(...piece50Ls.map(piece => piece.edges[3]));
         
         const pieces = layers.flatMap(layer => layer.pieces)
           .filter(p => !pieceCLs.includes(p) && !pieceCRs.includes(p) && !piece0Ls.includes(p) && !piece0Rs.includes(p))
@@ -2296,13 +2300,13 @@ export namespace Factory {
           ],
         };
       },
-      make_rifts: (radius: Geo.Distance, center_x: Geo.Distance, R: Geo.Distance) => {
+      make_rifts: (shape: PuzzleShape) => {
         return {
           branch_points: [
-            {point: [-center_x, 0], cut_angle: Math.PI/6, order: indices(turn)},
-            {point: [center_x, 0], cut_angle: Math.PI/6, order: reversePerm(indices(turn))},
-            {point: [0, center_x/Math.sqrt(3)], cut_angle: Math.PI/3, order: indices(turn)},
-            {point: [0, -center_x/Math.sqrt(3)], cut_angle: Math.PI/3, order: reversePerm(indices(turn))},
+            {point: [-shape.center_x, 0], cut_angle: Math.PI/6, order: indices(turn)},
+            {point: [shape.center_x, 0], cut_angle: Math.PI/6, order: rotate(indices(turn), 1).reverse()},
+            {point: [0, shape.center_x/Math.sqrt(3)], cut_angle: Math.PI/3, order: indices(turn)},
+            {point: [0, -shape.center_x/Math.sqrt(3)], cut_angle: Math.PI/3, order: rotate(indices(turn), 1).reverse()},
           ],
           rifts: [
             {left:0, right:1, coord:{offset:0.0, angle:0.0}},
@@ -2311,12 +2315,12 @@ export namespace Factory {
           rift_hierarchy: [],
         };
       },
-      make_texture_functions: puzzle => Textures.getQTextureFunction(puzzle, turn, scale),
+      make_texture_functions: puzzle => Textures.getQTextureFunction(puzzle, turn, colorscale),
       determine_texture_indices: (puzzle: PrincipalPuzzle) => {
         const texture_indices = new Map<Piece, number>();
         for (const sheet of indices(puzzle.stands.length)) {
           const texture_index = mod(2*sheet-3, 2*puzzle.stands.length);
-          const edge = Puzzle.edgeAt(puzzle, sheet, [0, 1, -1]);
+          const edge = AbstractPuzzle.edgeAt(puzzle, sheet, [0, 1, -1]);
           texture_indices.set(edge.aff, texture_index);
           texture_indices.set(Edge.walk(edge, [0]).aff, texture_index);
           texture_indices.set(Edge.walk(edge, [1]).aff, texture_index);
@@ -2325,7 +2329,7 @@ export namespace Factory {
         }
         for (const sheet of indices(puzzle.stands.length)) {
           const layer = new Set<Piece>();
-          layer.add(Puzzle.edgeAt(puzzle, sheet, []).aff);
+          layer.add(AbstractPuzzle.edgeAt(puzzle, sheet, []).aff);
           for (const piece of layer) {
             for (const edge of piece.edges) {
               const adj_piece = edge.adj.aff;
@@ -2343,10 +2347,10 @@ export namespace Factory {
     };
   }
 
-  export function DD(scale: number): PrincipalPuzzleWithTextureFactory {
+  export function DD(colorscale: number): PrincipalPuzzleWithTextureBuilder {
     return {
       make_pieces: () => {
-        const layers = indices(3).map(i => Puzzle.makePieces(`_${i}`));
+        const layers = indices(3).map(i => AbstractPuzzle.makePieces(`_${i}`));
         
         const piece50Ls = layers.map(layer => Edge.walk(layer.stand, [0, 1, -1, 1, 0]).aff);
         const pieceCLs = layers.map(layer => Edge.walk(layer.stand, [0, 1, -1, 1]).aff);
@@ -2357,22 +2361,22 @@ export namespace Factory {
         // ramify center pieces
 
         // ramified_pieceCLs[0].edges[1]: the edge from the bottom sheet to the top sheet
-        const ramified_pieceCLs = Puzzle.chunkPiece("CL", Puzzle.ramifyPiece("", [pieceCLs[0], pieceCLs[2]], 0), 2);
+        const ramified_pieceCLs = AbstractPuzzle.chunkPiece("CL", AbstractPuzzle.ramifyPiece("", [pieceCLs[0], pieceCLs[2]], 0), 2);
 
         // ramified_pieceCRs[0].edges[1]: the edge from the bottom sheet to the second sheet
-        const ramified_pieceCRs = Puzzle.chunkPiece("CR", Puzzle.ramifyPiece("", [pieceCRs[1], pieceCRs[2]], 0), 2);
+        const ramified_pieceCRs = AbstractPuzzle.chunkPiece("CR", AbstractPuzzle.ramifyPiece("", [pieceCRs[1], pieceCRs[2]], 0), 2);
 
         // ramify corner pieces
 
         // ramified_piece0Ls[0].edges[1]: the edge from the second sheet to the top sheet
-        const ramified_piece0Ls = Puzzle.chunkPiece("0L", Puzzle.ramifyPiece("", [piece0Ls[0], piece0Ls[1]], 0), 1);
+        const ramified_piece0Ls = AbstractPuzzle.chunkPiece("0L", AbstractPuzzle.ramifyPiece("", [piece0Ls[0], piece0Ls[1]], 0), 1);
 
         // ramified_piece0Rs[0].edges[1]: the edge from the second sheet to the top sheet
-        const ramified_piece0Rs = Puzzle.chunkPiece("0R", Puzzle.ramifyPiece("", [piece0Rs[0], piece0Rs[1]], 0), 1);
+        const ramified_piece0Rs = AbstractPuzzle.chunkPiece("0R", AbstractPuzzle.ramifyPiece("", [piece0Rs[0], piece0Rs[1]], 0), 1);
 
-        Puzzle.swapAdj(piece50Ls[0].edges[0], piece50Ls[1].edges[0]);
-        Puzzle.swapAdj(piece50Ls[0].edges[1], piece50Ls[1].edges[1], piece50Ls[2].edges[1]);
-        Puzzle.swapAdj(piece50Ls[1].edges[2], piece50Ls[2].edges[2]);
+        AbstractPuzzle.swapAdj(piece50Ls[0].edges[0], piece50Ls[1].edges[0]);
+        AbstractPuzzle.swapAdj(piece50Ls[0].edges[1], piece50Ls[1].edges[1], piece50Ls[2].edges[1]);
+        AbstractPuzzle.swapAdj(piece50Ls[1].edges[2], piece50Ls[2].edges[2]);
         
         const pieces = layers.flatMap(layer => layer.pieces)
           .filter(p => ![pieceCLs[0], pieceCLs[2], pieceCRs[1], pieceCRs[2], piece0Ls[0], piece0Ls[1], piece0Rs[0], piece0Rs[1]].includes(p))
@@ -2392,13 +2396,13 @@ export namespace Factory {
           ],
         };
       },
-      make_rifts: (radius: Geo.Distance, center_x: Geo.Distance, R: Geo.Distance) => {
+      make_rifts: (shape: PuzzleShape) => {
         return {
           branch_points: [
-            {point: [-center_x, 0], cut_angle: Math.PI/6, order: [0, 2]},
-            {point: [center_x, 0], cut_angle: Math.PI/6, order: [1, 2]},
-            {point: [0, center_x/Math.sqrt(3)], cut_angle: Math.PI/3, order: [0, 1]},
-            {point: [0, -center_x/Math.sqrt(3)], cut_angle: Math.PI/3, order: [0, 1]},
+            {point: [-shape.center_x, 0], cut_angle: Math.PI/6, order: [0, 2]},
+            {point: [shape.center_x, 0], cut_angle: Math.PI/6, order: [1, 2]},
+            {point: [0, shape.center_x/Math.sqrt(3)], cut_angle: Math.PI/3, order: [0, 1]},
+            {point: [0, -shape.center_x/Math.sqrt(3)], cut_angle: Math.PI/3, order: [0, 1]},
           ],
           rifts: [
             {left:0, right:1, coord:{offset:0.0, angle:0.0}},
@@ -2407,12 +2411,12 @@ export namespace Factory {
           rift_hierarchy: [[0, 1]],
         };
       },
-      make_texture_functions: puzzle => Textures.getDDTextureFunction(puzzle, scale),
+      make_texture_functions: puzzle => Textures.getDDTextureFunction(puzzle, colorscale),
       determine_texture_indices: (puzzle: PrincipalPuzzle) => {
         const texture_indices = new Map<Piece, number>();
         for (const sheet of indices(puzzle.stands.length)) {
           const texture_index = sheet;
-          const edge = Puzzle.edgeAt(puzzle, sheet, [0, 1, -1]);
+          const edge = AbstractPuzzle.edgeAt(puzzle, sheet, [0, 1, -1]);
           texture_indices.set(edge.aff, texture_index);
           texture_indices.set(Edge.walk(edge, [0]).aff, texture_index);
           texture_indices.set(Edge.walk(edge, [1]).aff, texture_index);
@@ -2422,7 +2426,7 @@ export namespace Factory {
         for (const sheet of indices(puzzle.stands.length)) {
           const texture_index = sheet + 3;
           const layer = new Set<Piece>();
-          layer.add(Puzzle.edgeAt(puzzle, sheet, []).aff);
+          layer.add(AbstractPuzzle.edgeAt(puzzle, sheet, []).aff);
           for (const piece of layer) {
             for (const edge of piece.edges) {
               const adj_piece = edge.adj.aff;

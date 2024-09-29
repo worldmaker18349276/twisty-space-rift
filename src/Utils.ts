@@ -3,6 +3,19 @@ export function assert(cond: boolean): asserts cond {
   if (!cond) throw new Error("assertion fail");
 }
 
+export type Result<R, E = string> =
+  | {ok: true, result: R}
+  | {ok: false, error: E};
+
+export namespace Result {
+  export function ok<R, E>(result: R): Result<R, E> {
+    return {ok:true, result};
+  }
+  export function err<R, E>(error: E): Result<R, E> {
+    return {ok:false, error};
+  }
+}
+
 export function indices(n: number): number[] {
   const res: number[] = [];
   for (let i = 0; i < n; i++)
@@ -43,17 +56,23 @@ export function append<K, V>(map: Map<K, V[]>, key: K, values: V[]) {
   }
 }
 
-export function cyclicSort(cyclic: number[]): number[] {
-  const perm = [...cyclic];
-  const min_index = perm.indexOf(Math.min(...perm))
-  return rotate(perm, min_index);
+export type CyclicPerm = number[];
+export function cyclicSort(list: number[]): number[] {
+  const min_index = list.indexOf(Math.min(...list));
+  return rotate(list, min_index);
 }
-export function applyPerm(perm: number[], n: number, value: number): number {
+export function asCyclicPerm(list: number[]): CyclicPerm {
+  return cyclicSort(list);
+}
+export function applyCyclicPerm(perm: CyclicPerm, n: number, value: number): number {
   const i = perm.indexOf(value);
   if (i === -1) return value;
   return perm[mod(i+n, perm.length)];
 }
-export function reversePerm(perm: number[]): number[] {
+export function applyCyclicPerm_(perm: CyclicPerm, value: CyclicPerm): CyclicPerm {
+  return cyclicSort(value.map(v => applyCyclicPerm(perm, 1, v)));
+}
+export function reverseCyclicPerm(perm: CyclicPerm): CyclicPerm {
   return rotate(perm, 1).reverse();
 }
 export function cmp(a1: readonly number[], a2: readonly number[]): number {
@@ -67,10 +86,11 @@ export function cmpOn<V>(key: (value: V) => readonly number[]): (value1: V, valu
   return (value1, value2) => cmp(key(value1), key(value2));
 }
 
-export function isDAG(digraph: [from:number, to:number][]): boolean {
+export type Digraph = [from:number, to:number][];
+export function isDAG(digraph: Digraph): boolean {
   return digraph.every(([below, above]) => !isReachable(digraph, above, below));
 }
-export function isReachable(digraph: [from:number, to:number][], from: number, to: number): boolean {
+export function isReachable(digraph: Digraph, from: number, to: number): boolean {
   if (from === to) return true;
   const res = new Set<number>([from]);
   for (const curr of res)
@@ -81,7 +101,7 @@ export function isReachable(digraph: [from:number, to:number][], from: number, t
       }
   return false;
 }
-export function allReachable(digraph: [from:number, to:number][], from: number): Set<number> {
+export function allReachable(digraph: Digraph, from: number): Set<number> {
   const res = new Set<number>([from]);
   for (const curr of res)
     for (const [i, j] of digraph)

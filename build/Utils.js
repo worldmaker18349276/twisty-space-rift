@@ -2,6 +2,17 @@ export function assert(cond) {
     if (!cond)
         throw new Error("assertion fail");
 }
+export var Result;
+(function (Result) {
+    function ok(result) {
+        return { ok: true, result };
+    }
+    Result.ok = ok;
+    function err(error) {
+        return { ok: false, error };
+    }
+    Result.err = err;
+})(Result || (Result = {}));
 export function indices(n) {
     const res = [];
     for (let i = 0; i < n; i++)
@@ -39,18 +50,23 @@ export function append(map, key, values) {
         slots.push(...values);
     }
 }
-export function cyclicSort(cyclic) {
-    const perm = [...cyclic];
-    const min_index = perm.indexOf(Math.min(...perm));
-    return rotate(perm, min_index);
+export function cyclicSort(list) {
+    const min_index = list.indexOf(Math.min(...list));
+    return rotate(list, min_index);
 }
-export function applyPerm(perm, n, value) {
+export function asCyclicPerm(list) {
+    return cyclicSort(list);
+}
+export function applyCyclicPerm(perm, n, value) {
     const i = perm.indexOf(value);
     if (i === -1)
         return value;
     return perm[mod(i + n, perm.length)];
 }
-export function reversePerm(perm) {
+export function applyCyclicPerm_(perm, value) {
+    return cyclicSort(value.map(v => applyCyclicPerm(perm, 1, v)));
+}
+export function reverseCyclicPerm(perm) {
     return rotate(perm, 1).reverse();
 }
 export function cmp(a1, a2) {

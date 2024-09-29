@@ -53,7 +53,7 @@ export enum PuzzleVariant {
   Dipole3H = "Dipole(3) H",
   Dipole3V = "Dipole(3) V",
   Quadrapole3 = "Quadrapole(3)",
-  DipoleDipole = "Dipole(2)-Dipole(2)",
+  Dipole_2 = "Dipole(2)^2",
 }
 
 export class SpaceRiftPuzzle {
@@ -84,48 +84,48 @@ export class SpaceRiftPuzzle {
   }
   
   static make(canvas: HTMLCanvasElement, variant: PuzzleVariant = PuzzleVariant.Dipole2H): SpaceRiftPuzzle {
-    const scale = 1; // for debug
-    const radius = 1.56;
-    const center_x = 1;
+    const zoomout_scale = 1; // for debug
     const cs = Draw.makeCoordinateSystem({
       width_pixel: canvas.clientWidth,
       height_pixel: canvas.clientHeight,
-      x_range: [-4 * scale, 4 * scale],
-      y_range: [-3 * scale, 3 * scale],
+      x_range: [-4 * zoomout_scale, 4 * zoomout_scale],
+      y_range: [-3 * zoomout_scale, 3 * zoomout_scale],
     });
-    const R = Math.sqrt(cs.x_range[0] * cs.x_range[0] + cs.y_range[0] * cs.y_range[0]) * 1.5 / scale;
+    const shape = {
+      radius: 1.56,
+      center_x: 1,
+      R: Math.sqrt(cs.x_range[0] * cs.x_range[0] + cs.y_range[0] * cs.y_range[0]) * 1.5 / zoomout_scale,
+    };
+
+    let builder: Model.PrincipalPuzzleWithTextureBuilder;
+    if (variant === PuzzleVariant.Dipole2H) {
+      builder = Model.Builder.DH(2, 1);
+
+    } else if (variant === PuzzleVariant.Dipole2V) {
+      builder = Model.Builder.DV(2, 1);
+
+    } else if (variant === PuzzleVariant.Dipole3H) {
+      builder = Model.Builder.DH(3, 1);
+
+    } else if (variant === PuzzleVariant.Dipole3V) {
+      builder = Model.Builder.DV(3, 1);
+
+    } else if (variant === PuzzleVariant.Quadrapole3) {
+      builder = Model.Builder.Q(3, 1);
+
+    } else if (variant === PuzzleVariant.Dipole_2) {
+      builder = Model.Builder.DD(1);
+
+    } else {
+      assert(false);
+    }
 
     const image_x_range: [number, number] = [cs.x_range[0], cs.x_range[1]];
     const image_y_range: [number, number] = [cs.y_range[0], cs.y_range[1]];
     const drawComplex = (f: Complex.ComplexFunction) => Draw.drawComplex(cs, f, image_x_range, image_y_range);
 
-    if (variant === PuzzleVariant.Dipole2H) {
-      const model = Model.PrincipalPuzzleWithTexture.makePuzzle(Model.Factory.DH(2, 1), radius, center_x, R, drawComplex);
-      return new SpaceRiftPuzzle({variant, canvas, model, cs});
-
-    } else if (variant === PuzzleVariant.Dipole2V) {
-      const model = Model.PrincipalPuzzleWithTexture.makePuzzle(Model.Factory.DV(2, 1), radius, center_x, R, drawComplex);
-      return new SpaceRiftPuzzle({variant, canvas, model, cs});
-
-    } else if (variant === PuzzleVariant.Dipole3H) {
-      const model = Model.PrincipalPuzzleWithTexture.makePuzzle(Model.Factory.DH(3, 1), radius, center_x, R, drawComplex);
-      return new SpaceRiftPuzzle({variant, canvas, model, cs});
-
-    } else if (variant === PuzzleVariant.Dipole3V) {
-      const model = Model.PrincipalPuzzleWithTexture.makePuzzle(Model.Factory.DV(3, 1), radius, center_x, R, drawComplex);
-      return new SpaceRiftPuzzle({variant, canvas, model, cs});
-
-    } else if (variant === PuzzleVariant.Quadrapole3) {
-      const model = Model.PrincipalPuzzleWithTexture.makePuzzle(Model.Factory.Q(3, 1), radius, center_x, R, drawComplex);
-      return new SpaceRiftPuzzle({variant, canvas, model, cs});
-
-    } else if (variant === PuzzleVariant.DipoleDipole) {
-      const model = Model.PrincipalPuzzleWithTexture.makePuzzle(Model.Factory.DD(1), radius, center_x, R, drawComplex);
-      return new SpaceRiftPuzzle({variant, canvas, model, cs});
-
-    } else {
-      assert(false);
-    }
+    const model = Model.PrincipalPuzzleWithTexture.makePuzzle(builder, shape, drawComplex);
+    return new SpaceRiftPuzzle({variant, canvas, model, cs});
   }
   init(): void {
     this.registerController();
@@ -154,7 +154,7 @@ export class SpaceRiftPuzzle {
           this.control_state.angle_to,
         );
         Model.PrincipalPuzzleWithTexture.snap(this.model);
-        assert(Model.Puzzle.isAligned(this.model));
+        assert(Model.AbstractPuzzle.isAligned(this.model));
         this.control_state = {type: PuzzleControlStateType.Ready};
       } else {
         const angle = this.control_state.angle_from + (this.control_state.angle_to - this.control_state.angle_from) * t;
@@ -489,7 +489,7 @@ export class SpaceRiftPuzzle {
       const piece = this.pointTo(point);
       if (piece === undefined) return;
       const sheet = indices(this.model.stands.length)
-        .find(sheet => Model.Puzzle.getTwistPieces(this.model, side, sheet)?.pieces.has(piece) ?? false);
+        .find(sheet => Model.AbstractPuzzle.getTwistPieces(this.model, side, sheet)?.pieces.has(piece) ?? false);
       if (sheet === undefined) return;
       const turn = forward ? 1 : -1;
       this.twist(side, sheet, turn);
