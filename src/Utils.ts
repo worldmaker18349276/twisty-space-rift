@@ -66,3 +66,26 @@ export function cmp(a1: readonly number[], a2: readonly number[]): number {
 export function cmpOn<V>(key: (value: V) => readonly number[]): (value1: V, value2: V) => number {
   return (value1, value2) => cmp(key(value1), key(value2));
 }
+
+export function isDAG(digraph: [from:number, to:number][]): boolean {
+  return digraph.every(([below, above]) => !isReachable(digraph, above, below));
+}
+export function isReachable(digraph: [from:number, to:number][], from: number, to: number): boolean {
+  if (from === to) return true;
+  const res = new Set<number>([from]);
+  for (const curr of res)
+    for (const [i, j] of digraph)
+      if (i === curr) {
+        if (j === to) return true;
+        res.add(j);
+      }
+  return false;
+}
+export function allReachable(digraph: [from:number, to:number][], from: number): Set<number> {
+  const res = new Set<number>([from]);
+  for (const curr of res)
+    for (const [i, j] of digraph)
+      if (i === curr)
+        res.add(j);
+  return res;
+}

@@ -64,4 +64,28 @@ export function cmp(a1, a2) {
 export function cmpOn(key) {
     return (value1, value2) => cmp(key(value1), key(value2));
 }
+export function isDAG(digraph) {
+    return digraph.every(([below, above]) => !isReachable(digraph, above, below));
+}
+export function isReachable(digraph, from, to) {
+    if (from === to)
+        return true;
+    const res = new Set([from]);
+    for (const curr of res)
+        for (const [i, j] of digraph)
+            if (i === curr) {
+                if (j === to)
+                    return true;
+                res.add(j);
+            }
+    return false;
+}
+export function allReachable(digraph, from) {
+    const res = new Set([from]);
+    for (const curr of res)
+        for (const [i, j] of digraph)
+            if (i === curr)
+                res.add(j);
+    return res;
+}
 //# sourceMappingURL=Utils.js.map

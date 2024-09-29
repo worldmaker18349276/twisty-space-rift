@@ -589,7 +589,7 @@ export class SpaceRiftPuzzle {
         this.render(counter);
       }
       requestAnimationFrame(step);
-    }
+    };
     requestAnimationFrame(step);
     this.render(counter);
   }

@@ -1,6 +1,6 @@
 import * as Geo from "./Geometry2D.js";
 import * as Complex from "./Complex.js";
-import { assert, indices, mod, zip, rotate, unrollUntilLoopback, append, applyPerm, cmpOn, cmp, cyclicSort, reversePerm } from "./Utils.js";
+import { assert, indices, mod, zip, rotate, unrollUntilLoopback, append, applyPerm, cmpOn, cmp, cyclicSort, reversePerm, isDAG, isReachable, allReachable, } from "./Utils.js";
 export var Edge;
 (function (Edge) {
     function next(edge) {
@@ -767,7 +767,7 @@ export var PrincipalPuzzle;
                     return Geo.as_0_2pi(coord.angle - rift.coord.angle);
                 }
             });
-            return { ...branch_point, rel_angles };
+            return { ...branch_point, perm: cyclicSort(branch_point.order), rel_angles };
         });
         return {
             ...puzzle,
@@ -809,10 +809,10 @@ export var PrincipalPuzzle;
         const rel_angless = zip(crosses, rel_angless_)
             .map(([cross, rel_angles]) => zip(cross, rel_angles)
             .map(([turn, rel_angle]) => rel_angle - turn * Math.PI * 2));
-        const cross_hierarchy = crosses.flatMap((cross, i) => cross.flatMap((turn, j) => (turn === 0 ? [] : [[i, j]])));
+        const cross_relations = crosses.flatMap((cross, i) => cross.flatMap((turn, j) => (turn === 0 ? [] : [[i, j]])));
         return {
             rel_angless,
-            cross_hierarchy,
+            cross_relations,
         };
     }
     function getInfRadius(puzzle, rift) {
@@ -851,35 +851,24 @@ export var PrincipalPuzzle;
             ],
         };
     }
-    function cutRiftShapes(puzzle, rifts, rift_shapes, cross_hierarchy) {
-        function isAbove(dag, below, above) {
-            return dag.some(([i, j]) => i === below && j === above)
-                || dag.some(([i, j]) => i === below && isAbove(dag, j, above));
-        }
-        function allAbove(dag, below) {
-            const res = new Set([below]);
-            for (const curr of res)
-                for (const [i, j] of dag)
-                    if (i === curr)
-                        res.add(j);
-            res.delete(below);
-            return res;
-        }
-        const crossing_branch_point_indices = new Set(cross_hierarchy.map(([i, j]) => i));
+    function cutRiftShapes(puzzle, rifts, rift_shapes, cross_relations) {
+        const crossing_state = indices(puzzle.branch_points.length).map(index => cross_relations.some(([i, j]) => i === index));
         // calculate transferred rift hierarchy
         const transferred_rift_hierarchy = [...puzzle.rift_hierarchy];
-        for (const [below, above] of cross_hierarchy) {
-            if (isAbove(transferred_rift_hierarchy, above, below)) {
+        for (const [branch_point_index, rift_index] of cross_relations) {
+            const rift_index_ = rifts.findIndex(rift => rift.left === branch_point_index || rift.right === branch_point_index);
+            assert(rift_index_ !== -1);
+            if (isReachable(transferred_rift_hierarchy, rift_index, rift_index_)) {
                 console.warn("try to cross the rift above from below");
                 return undefined;
             }
-            transferred_rift_hierarchy.push([below, above]);
+            transferred_rift_hierarchy.push([rift_index_, rift_index]);
         }
         function assignHierarchy(index1, index2) {
-            if (isAbove(transferred_rift_hierarchy, index1, index2)) {
+            if (isReachable(transferred_rift_hierarchy, index1, index2)) {
                 return true;
             }
-            if (isAbove(transferred_rift_hierarchy, index2, index1)) {
+            if (isReachable(transferred_rift_hierarchy, index2, index1)) {
                 return false;
             }
             // TODO: determine based on context
@@ -897,11 +886,13 @@ export var PrincipalPuzzle;
             .map(info => assignHierarchy(index1, index2) ?
             { below_pos: info.pos1, above_pos: info.pos2, ccw: info.ccw }
             : { below_pos: info.pos2, above_pos: info.pos1, ccw: !info.ccw }));
+        assert(isDAG(transferred_rift_hierarchy));
         // determine permutations around intersection points
+        const branch_point_perms = [];
         const intersection_above_perms = new Map();
         const intersection_below_perms = new Map();
         const sorted_rift_indices = indices(rifts.length)
-            .sort(cmpOn(rift_index => [allAbove(transferred_rift_hierarchy, rift_index).size]));
+            .sort(cmpOn(rift_index => [allReachable(transferred_rift_hierarchy, rift_index).size]));
         for (const rift_index of sorted_rift_indices) {
             // find permutations for each crossing
             const sorted_intersections = rift_intersections
@@ -916,12 +907,13 @@ export var PrincipalPuzzle;
                 return info.ccw ? [...above_perm].reverse() : above_perm;
             });
             // determine permutations around intersections of this rift
-            const left_crossing = crossing_branch_point_indices.has(rifts[rift_index].left);
-            const right_crossing = crossing_branch_point_indices.has(rifts[rift_index].right);
+            const left_crossing = crossing_state[rifts[rift_index].left];
+            const right_crossing = crossing_state[rifts[rift_index].right];
             assert(!left_crossing || !right_crossing);
             if (!left_crossing) {
                 // from left
-                let perm = cyclicSort(puzzle.branch_points[rifts[rift_index].left].order);
+                const left_perm = puzzle.branch_points[rifts[rift_index].left].perm;
+                let perm = left_perm;
                 for (const [info, cross_perm] of zip(sorted_intersections, cross_perms)) {
                     if (info.above_pos[0] === rift_index) {
                         assert(!intersection_above_perms.has(info));
@@ -935,10 +927,13 @@ export var PrincipalPuzzle;
                         intersection_below_perms.set(info, { prev, post });
                     }
                 }
+                branch_point_perms[rifts[rift_index].left] = left_perm;
+                branch_point_perms[rifts[rift_index].right] = reversePerm(perm);
             }
             else {
                 // from right
-                let perm = reversePerm(cyclicSort(puzzle.branch_points[rifts[rift_index].right].order));
+                const right_perm = reversePerm(puzzle.branch_points[rifts[rift_index].right].perm);
+                let perm = right_perm;
                 for (const [info, cross_perm] of zip(sorted_intersections, cross_perms).reverse()) {
                     if (info.above_pos[0] === rift_index) {
                         assert(!intersection_above_perms.has(info));
@@ -952,66 +947,21 @@ export var PrincipalPuzzle;
                         intersection_below_perms.set(info, { prev, post });
                     }
                 }
+                branch_point_perms[rifts[rift_index].left] = perm;
+                branch_point_perms[rifts[rift_index].right] = reversePerm(right_perm);
             }
-        }
-        // determine and check orders of branch points
-        const orders = [];
-        for (const rift_index of indices(rifts.length)) {
-            const sorted_intersections = rift_intersections
-                .filter(info => info.below_pos[0] === rift_index || info.above_pos[0] === rift_index)
-                .sort(cmpOn(info => info.below_pos[0] === rift_index ? info.below_pos : info.above_pos));
-            const left_crossing = crossing_branch_point_indices.has(rifts[rift_index].left);
-            const right_crossing = crossing_branch_point_indices.has(rifts[rift_index].right);
-            const left_order = puzzle.branch_points[rifts[rift_index].left].order;
-            const right_order = reversePerm(puzzle.branch_points[rifts[rift_index].right].order);
-            assert(!left_crossing || !right_crossing);
-            if (!left_crossing) {
-                // from left
-                let order = left_order;
-                for (const info of sorted_intersections) {
-                    if (info.above_pos[0] === rift_index) {
-                        const { prev, post } = intersection_below_perms.get(info);
-                        const perm = info.ccw ? prev : reversePerm(post);
-                        order = order.map(v => applyPerm(perm, 1, v));
-                    }
-                    else {
-                        const perm_ = intersection_above_perms.get(info);
-                        const perm = info.ccw ? reversePerm(perm_) : perm_;
-                        order = order.map(v => applyPerm(perm, 1, v));
-                    }
-                }
-                orders[rifts[rift_index].left] = left_order;
-                orders[rifts[rift_index].right] = reversePerm(order);
-            }
-            else {
-                // from right
-                let order = right_order;
-                for (const info of [...sorted_intersections].reverse()) {
-                    if (info.above_pos[0] === rift_index) {
-                        const { prev, post } = intersection_below_perms.get(info);
-                        const perm = info.ccw ? prev : reversePerm(post);
-                        order = order.map(v => applyPerm(perm, -1, v));
-                    }
-                    else {
-                        const perm_ = intersection_above_perms.get(info);
-                        const perm = info.ccw ? reversePerm(perm_) : perm_;
-                        order = order.map(v => applyPerm(perm, -1, v));
-                    }
-                }
-                orders[rifts[rift_index].left] = order;
-                orders[rifts[rift_index].right] = reversePerm(right_order);
-            }
+            // check permutations at branch points
             if (!left_crossing) {
                 const index = rifts[rift_index].left;
-                if (cmp(orders[index], puzzle.branch_points[index].order) !== 0) {
-                    console.warn("branch point's order changes without crossing");
+                if (cmp(branch_point_perms[index], puzzle.branch_points[index].perm) !== 0) {
+                    console.warn("branch point's permutation changes without crossing");
                     return undefined;
                 }
             }
             if (!right_crossing) {
                 const index = rifts[rift_index].right;
-                if (cmp(orders[index], puzzle.branch_points[index].order) !== 0) {
-                    console.warn("branch point's order changes without crossing");
+                if (cmp(branch_point_perms[index], puzzle.branch_points[index].perm) !== 0) {
+                    console.warn("branch point's permutation changes without crossing");
                     return undefined;
                 }
             }
@@ -1029,7 +979,7 @@ export var PrincipalPuzzle;
                 .sort(cmpOn(info => info.below_pos));
             const seg_perms = sorted_below_intersections
                 .map(info => intersection_below_perms.get(info).post);
-            seg_perms.unshift(cyclicSort(orders[rifts[rift_index].left]));
+            seg_perms.unshift(cyclicSort(branch_point_perms[rifts[rift_index].left]));
             const rift_shape = rift_shapes[rift_index];
             assert(!rift_shape.is_closed);
             const start_pos = [0, 0];
@@ -1058,14 +1008,17 @@ export var PrincipalPuzzle;
                 continue;
             const below = info.below_pos[0];
             const above = info.above_pos[0];
-            if (isAbove(rift_hierarchy, above, below)) {
+            if (isReachable(rift_hierarchy, above, below)) {
                 console.warn("invalid hierarchy");
                 return undefined;
             }
             rift_hierarchy.push([below, above]);
         }
+        assert(isDAG(rift_hierarchy));
+        const crossing_branch_point_perms = branch_point_perms
+            .map((perm, i) => crossing_state[i] ? perm : undefined);
         return {
-            orders,
+            crossing_branch_point_perms,
             cutted_rift_shapes,
             rift_perms,
             rift_hierarchy,
@@ -1080,7 +1033,7 @@ export var PrincipalPuzzle;
             const right_point = puzzle.branch_points[rift.right].point;
             return calculateRiftShape(left_point, right_point, rift.coord, getInfRadius(puzzle, rift));
         });
-        const res2 = cutRiftShapes(puzzle, rifts, rift_shapes, res1.cross_hierarchy);
+        const res2 = cutRiftShapes(puzzle, rifts, rift_shapes, res1.cross_relations);
         if (res2 === undefined)
             return undefined;
         return {
@@ -1089,7 +1042,7 @@ export var PrincipalPuzzle;
             rift_shapes,
         };
     }
-    function calculateClippedShapes(puzzle) {
+    function calculateClippedShapesAndUpdateOrders(puzzle) {
         const RETRY = 5;
         const PERTURBATION = 1e-4;
         const shapes = Puzzle.calculateShapes(puzzle);
@@ -1100,10 +1053,15 @@ export var PrincipalPuzzle;
             const res2 = cutShapes(puzzle, shapes, res1.rift_shapes, n);
             if (res2 === undefined)
                 return undefined;
-            const layers = determineLayers(puzzle, shapes, res1.rift_shapes, res2.cutted_shapes, res1.cutted_rift_shapes, res1.rift_perms, res2.seeds, n);
-            if (layers === undefined)
+            const res3 = determineLayers(puzzle, shapes, res1.rift_shapes, res2.cutted_shapes, res1.cutted_rift_shapes, res1.rift_perms, res2.cutted_ramified_shapes, n);
+            if (res3 === undefined)
                 return undefined;
-            return { layers, rifts: res1.rift_shapes };
+            const branch_points = zip(res1.crossing_branch_point_perms, res3.orders)
+                .map(([perm, order], i) => ({
+                perm: perm !== null && perm !== void 0 ? perm : puzzle.branch_points[i].perm,
+                order,
+            }));
+            return { layers: res3.layers, rifts: res1.rift_shapes, branch_points };
         }
         let res = go(puzzle.rifts, 0);
         for (const n of indices(RETRY)) {
@@ -1125,9 +1083,18 @@ export var PrincipalPuzzle;
             // console.warn(`fail to calculate clipped shapes, try again with perturbation (${n})`, perturbation);
             res = go(perturb_rifts, n + 1);
         }
-        return res;
+        if (res === undefined)
+            return undefined;
+        for (const [branch_point, { order, perm }] of zip(puzzle.branch_points, res.branch_points)) {
+            branch_point.order = order;
+            branch_point.perm = perm;
+        }
+        return {
+            layers: res.layers,
+            rifts: res.rifts,
+        };
     }
-    PrincipalPuzzle.calculateClippedShapes = calculateClippedShapes;
+    PrincipalPuzzle.calculateClippedShapesAndUpdateOrders = calculateClippedShapesAndUpdateOrders;
     function calculateRiftAngle(puzzle, shapes, rift_shapes, index) {
         const rift_index = puzzle.rifts.findIndex(({ left, right }) => left === index || right === index);
         assert(rift_index !== -1);
@@ -1272,7 +1239,7 @@ export var PrincipalPuzzle;
             append(cutted_shapes, piece, res);
         }
         // cut ramified pieces
-        const seeds = indices(puzzle.stands.length).map(_ => []);
+        const cutted_ramified_shapes = [];
         for (const i of indices(puzzle.ramified.length)) {
             const ramified = puzzle.ramified[i];
             const branch_point = puzzle.branch_points[i];
@@ -1308,6 +1275,7 @@ export var PrincipalPuzzle;
                 }
             }
             // cut subpieces
+            cutted_ramified_shapes[i] = [];
             for (const index of indices(ramified.pieces.length)) {
                 const piece = ramified.pieces[index];
                 const shape = shapes.get(piece);
@@ -1330,30 +1298,78 @@ export var PrincipalPuzzle;
                 if (res === undefined)
                     return undefined;
                 append(cutted_shapes, piece, res);
-                // assign each cutted subpiece to seeds
-                for (const [ramified_piece_index, layer_index] of zip(ramified_piece_indices, branch_point.order)) {
-                    if (index === ramified_piece_index) {
-                        const seed_shape0 = rift_side ?
-                            res.find(path => path.segs.some(seg => seg.source.type === Geo.CutSourceType.LeftCut
-                                && seg.source.ref === rift_shape.segs[0]
-                                && seg.source.from === 0))
-                            :
-                                res.find(path => path.segs.some(seg => seg.source.type === Geo.CutSourceType.RightCut
-                                    && seg.source.ref === rift_shape.segs[rift_shape.segs.length - 1]
-                                    && seg.source.from === seg.source.ref.len));
-                        if (seed_shape0 === undefined)
-                            console.warn(`cannot find ${layer_index}-layer seed of ramified piece: ${piece.name}`);
-                        else
-                            seeds[layer_index].push(seed_shape0);
+                // assign cutted subpiece
+                const turn = ramified_piece_indices.indexOf(index);
+                if (turn !== -1) {
+                    const cutted_shape = rift_side ?
+                        res.find(path => path.segs.some(seg => seg.source.type === Geo.CutSourceType.LeftCut
+                            && seg.source.ref === rift_shape.segs[0]
+                            && seg.source.from === 0))
+                        :
+                            res.find(path => path.segs.some(seg => seg.source.type === Geo.CutSourceType.RightCut
+                                && seg.source.ref === rift_shape.segs[rift_shape.segs.length - 1]
+                                && seg.source.from === seg.source.ref.len));
+                    if (cutted_shape === undefined) {
+                        console.warn(`cannot find cutted ramified piece: ${piece.name}`);
+                        return undefined;
                     }
+                    cutted_ramified_shapes[i][turn] = cutted_shape;
                 }
             }
         }
-        return { cutted_shapes, seeds };
+        return { cutted_shapes, cutted_ramified_shapes };
     }
-    function determineLayers(puzzle, shapes, rift_shapes, cutted_shapes, cutted_rift_shapes, rift_perms, seeds, n = 0) {
-        const cutted_shapes_layer = new Map(seeds.flatMap((seeds, layer_index) => seeds.map(shape => [shape, layer_index])));
+    function determineLayers(puzzle, shapes, rift_shapes, cutted_shapes, cutted_rift_shapes, rift_perms, cutted_ramified_shapes, n = 0) {
+        const cutted_shapes_layer = new Map();
+        for (const [branch_point, cutted_shapes] of zip(puzzle.branch_points, cutted_ramified_shapes)) {
+            if (branch_point.order !== undefined) {
+                for (const [cutted_shape, layer_index] of zip(cutted_shapes, branch_point.order)) {
+                    cutted_shapes_layer.set(cutted_shape, layer_index);
+                }
+            }
+        }
+        const orders = puzzle.branch_points.map(branch_point => branch_point.order);
         for (const [path, layer_index] of cutted_shapes_layer) {
+            const ramified_index = cutted_ramified_shapes.findIndex(shapes => shapes.includes(path));
+            if (ramified_index !== -1) {
+                const turn = cutted_ramified_shapes[ramified_index].indexOf(path);
+                let order;
+                if (puzzle.branch_points[ramified_index].order === undefined) {
+                    const perm = puzzle.branch_points[ramified_index].perm;
+                    const turn_ = perm.indexOf(layer_index);
+                    if (turn_ === -1) {
+                        console.warn(`fail to clip path (${n}): conflict layer`);
+                        return undefined;
+                    }
+                    order = rotate(perm, turn_ - turn);
+                }
+                else {
+                    order = puzzle.branch_points[ramified_index].order;
+                    const turn_ = order.indexOf(layer_index);
+                    if (turn_ === -1) {
+                        console.warn(`fail to clip path (${n}): conflict layer`);
+                        return undefined;
+                    }
+                    if (turn_ !== turn) {
+                        console.warn(`fail to clip path (${n}): conflict layer`);
+                        return undefined;
+                    }
+                }
+                for (const [cutted_shape, turn_layer_index] of zip(cutted_ramified_shapes[ramified_index], order)) {
+                    if (cutted_shapes_layer.has(cutted_shape)) {
+                        if (cutted_shapes_layer.get(cutted_shape) !== turn_layer_index) {
+                            console.warn(`fail to clip path (${n}): conflict layer`);
+                            return undefined;
+                        }
+                    }
+                    else {
+                        cutted_shapes_layer.set(cutted_shape, turn_layer_index);
+                    }
+                }
+                if (orders[ramified_index] === undefined) {
+                    orders[ramified_index] = order;
+                }
+            }
             for (const seg of path.segs) {
                 let adj_paths;
                 if (seg.source.type === Geo.CutSourceType.Seg) {
@@ -1397,7 +1413,13 @@ export var PrincipalPuzzle;
         if (unclassified.size > 0) {
             console.warn(`fail to clip path (${n}): ${unclassified.size} shapes are not classified into any layer`);
         }
-        return layers;
+        if (orders.some(order => order === undefined)) {
+            console.warn(`fail to clip path (${n}): some orders on branch points cannot be determined`);
+        }
+        return {
+            layers,
+            orders,
+        };
     }
     function updateRiftRelAngles(puzzle) {
         const RETRY = 5;
@@ -1426,9 +1448,14 @@ export var PrincipalPuzzle;
             console.error("fail to update rift rel angles");
             return false;
         }
-        for (const [[branch_point, rel_angles], order] of zip(zip(puzzle.branch_points, res.rel_angless), res.orders)) {
+        for (const [branch_point, rel_angles] of zip(puzzle.branch_points, res.rel_angless)) {
             branch_point.rel_angles = rel_angles;
-            branch_point.order = order;
+        }
+        for (const [branch_point, perm] of zip(puzzle.branch_points, res.crossing_branch_point_perms)) {
+            if (perm !== undefined) {
+                branch_point.order = undefined;
+                branch_point.perm = perm;
+            }
         }
         puzzle.rift_hierarchy = res.rift_hierarchy;
         return true;
@@ -1526,7 +1553,7 @@ export var PrincipalPuzzleWithTexture;
     PrincipalPuzzleWithTexture.calculateImages = calculateImages;
     function calculateClippedImages(puzzle) {
         const positions = getPositions(puzzle);
-        const clipped_shapes = PrincipalPuzzle.calculateClippedShapes(puzzle);
+        const clipped_shapes = PrincipalPuzzle.calculateClippedShapesAndUpdateOrders(puzzle);
         if (clipped_shapes === undefined)
             return undefined;
         const images = clipped_shapes.layers.map(layer => new Set(Array.from(layer)
@@ -1796,9 +1823,9 @@ export var Factory;
                 return {
                     branch_points: [
                         { point: [-center_x, 0], cut_angle: Math.PI / 6, order: indices(turn) },
-                        { point: [center_x, 0], cut_angle: mod(Math.PI / 6 - 2 * Math.PI, 2 * Math.PI * turn), order: rotate(indices(turn), 2).reverse() },
+                        { point: [center_x, 0], cut_angle: Math.PI / 6, order: reversePerm(indices(turn)) },
                         { point: [0, center_x / Math.sqrt(3)], cut_angle: Math.PI / 3, order: indices(turn) },
-                        { point: [0, -center_x / Math.sqrt(3)], cut_angle: mod(Math.PI / 3 + 2 * Math.PI, 2 * Math.PI * turn), order: indices(turn).reverse() },
+                        { point: [0, -center_x / Math.sqrt(3)], cut_angle: Math.PI / 3, order: reversePerm(indices(turn)) },
                     ],
                     rifts: [
                         { left: 0, right: 1, coord: { offset: 0.0, angle: 0.0 } },
