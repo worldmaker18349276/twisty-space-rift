@@ -1377,10 +1377,10 @@ export var PrincipalPuzzle;
                     if (cutted_shapes_layer.has(adj_path)) {
                         if (cutted_shapes_layer.get(adj_path) !== adj_layer_index) {
                             if (perm === undefined) {
-                                return Result.err(`conflict layer: (determined by edge adjacency) ${adj_layer_index} != ${cutted_shapes_layer.get(adj_path)}`);
+                                return Result.err(`conflict layer: (determined by edge adjacency) ${layer_index} != ${cutted_shapes_layer.get(adj_path)}`);
                             }
                             else {
-                                return Result.err(`conflict layer: (determined by cut adjacency) ${adj_layer_index} != ${cutted_shapes_layer.get(adj_path)}`);
+                                return Result.err(`conflict layer: (determined by cut adjacency) [${perm}] * ${layer_index} != ${cutted_shapes_layer.get(adj_path)}`);
                             }
                         }
                     }

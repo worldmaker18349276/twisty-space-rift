@@ -101,8 +101,8 @@ export function toCanvasPath(cs, path, hide) {
             }
         }
     }
-    if (path.is_closed && !(hide === null || hide === void 0 ? void 0 : hide[0]) && !(hide === null || hide === void 0 ? void 0 : hide[path.segs.length - 1])) {
-        // console.log("close");
+    // path cannot be closed if some segments is hiding
+    if (hide === undefined && path.is_closed) {
         path2D.closePath();
     }
     return path2D;

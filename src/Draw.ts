@@ -122,8 +122,8 @@ export function toCanvasPath<T>(cs: CoordinateSystem, path: Geo.Path<T>, hide?: 
       }
     }
   }
-  if (path.is_closed && !(hide?.[0]) && !(hide?.[path.segs.length - 1])) {
-    // console.log("close");
+  // path cannot be closed if some segments is hiding
+  if (hide === undefined && path.is_closed) {
     path2D.closePath();
   }
   return path2D;
