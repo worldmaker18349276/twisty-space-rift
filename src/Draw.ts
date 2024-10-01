@@ -1,5 +1,6 @@
 import * as Geo from "./Geometry2D.js";
 import * as Complex from "./Complex.js";
+import { assert } from "./Utils.js";
 
 export type CoordinateSystem = {
   width_pixel: number;
@@ -85,9 +86,7 @@ function arcTo(path: Path2D, cs: CoordinateSystem, control: Geo.Point, point: Ge
   // path.lineTo(x, y);
 }
 
-export function toCanvasPath<T>(cs: CoordinateSystem, path: Geo.Path<T>, hide?: boolean[]): Path2D {
-  const path2D = new Path2D();
-  moveTo(path2D, cs, Geo.getStartPoint(path, 0));
+function drawPath<T>(path2D: Path2D, cs: CoordinateSystem, path: Geo.Path<T>, hide?: boolean[]): void {
   for (let i = 0; i < path.segs.length; i++) {
     const seg = path.segs[i];
     if (hide?.[i]) {
@@ -122,6 +121,32 @@ export function toCanvasPath<T>(cs: CoordinateSystem, path: Geo.Path<T>, hide?: 
       }
     }
   }
+}
+
+export function clipPaths<T>(cs: CoordinateSystem, paths: Geo.Path<T>[]): Path2D {
+  const path2D = new Path2D();
+
+  const a: Geo.Point = [cs.x_range[0], cs.y_range[0]];
+  const b: Geo.Point = [cs.x_range[0], cs.y_range[1]];
+  const c: Geo.Point = [cs.x_range[1], cs.y_range[1]];
+  const d: Geo.Point = [cs.x_range[1], cs.y_range[0]];
+  moveTo(path2D, cs, a);
+  for (const path of paths) {
+    lineTo(path2D, cs, Geo.getStartPoint(path, 0));
+    drawPath(path2D, cs, path);
+    lineTo(path2D, cs, a);
+  }
+  lineTo(path2D, cs, b);
+  lineTo(path2D, cs, c);
+  lineTo(path2D, cs, d);
+  path2D.closePath();
+  return path2D;
+}
+
+export function toCanvasPath<T>(cs: CoordinateSystem, path: Geo.Path<T>, hide?: boolean[]): Path2D {
+  const path2D = new Path2D();
+  moveTo(path2D, cs, Geo.getStartPoint(path, 0));
+  drawPath(path2D, cs, path, hide);
   // path cannot be closed if some segments is hiding
   if (hide === undefined && path.is_closed) {
     path2D.closePath();

@@ -63,7 +63,7 @@ export class SpaceRiftPuzzle {
   cs: Draw.CoordinateSystem;
   control_state: PuzzleControlState;
   current_images: Set<Model.ClippedImage<{canvas:HTMLCanvasElement, trans:Draw.CanvasMatrix}>>;
-  current_rifts: Geo.Path<undefined>[];
+  current_rifts: Geo.Path<Geo.CutSourceSeg<undefined>>[];
   render_frame: boolean = true;
   render_ruler: boolean = false;
   render_counter: boolean = false;
@@ -279,8 +279,34 @@ export class SpaceRiftPuzzle {
 
     ctx.lineWidth = 3;
     ctx.strokeStyle = RIFT_COLOR;
-    for (const rift of this.current_rifts)
+    const CROSS_WIDTH = 0.05;
+    for (const rift of this.current_rifts) {
+      assert(!rift.is_closed);
+      const mask_circles = indices(rift.segs.length)
+        .filter(i => rift.segs[i].source.from !== undefined)
+        .slice(1)
+        .map(i => Geo.getStartPoint(rift, i))
+        .map(p => ({
+          is_closed: true,
+          segs: [
+            {
+              type: Geo.PathSegType.Arc,
+              circle: {
+                center: p,
+                radius: CROSS_WIDTH,
+              },
+              len: Math.PI*2,
+              source: undefined,
+              target: Geo.add(p, [0, CROSS_WIDTH]),
+            }
+          ]
+        }) as Geo.Path<undefined>);
+
+      ctx.save();
+      ctx.clip(Draw.clipPaths(this.cs, mask_circles));
       ctx.stroke(Draw.toCanvasPath(this.cs, rift));
+      ctx.restore();
+    }
 
     if (this.focus_piece !== undefined) {
       const images = Model.PrincipalPuzzleWithTexture.calculateImages(this.model);

@@ -1070,7 +1070,11 @@ export var PrincipalPuzzle;
                 perm: perm !== null && perm !== void 0 ? perm : puzzle.rift_endpoints[i].perm,
                 order,
             }));
-            return Result.ok({ layers: res3.result.layers, rifts: res1.result.rift_shapes, branch_points });
+            return Result.ok({
+                layers: res3.result.layers,
+                rifts: res1.result.cutted_rift_shapes,
+                branch_points,
+            });
         }
         let res = go(puzzle.rifts, 0);
         for (const n of indices(RETRY)) {

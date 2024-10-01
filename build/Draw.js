@@ -63,9 +63,7 @@ function arcTo(path, cs, control, point, radius) {
     // path.lineTo(x_, y_);
     // path.lineTo(x, y);
 }
-export function toCanvasPath(cs, path, hide) {
-    const path2D = new Path2D();
-    moveTo(path2D, cs, Geo.getStartPoint(path, 0));
+function drawPath(path2D, cs, path, hide) {
     for (let i = 0; i < path.segs.length; i++) {
         const seg = path.segs[i];
         if (hide === null || hide === void 0 ? void 0 : hide[i]) {
@@ -101,6 +99,29 @@ export function toCanvasPath(cs, path, hide) {
             }
         }
     }
+}
+export function clipPaths(cs, paths) {
+    const path2D = new Path2D();
+    const a = [cs.x_range[0], cs.y_range[0]];
+    const b = [cs.x_range[0], cs.y_range[1]];
+    const c = [cs.x_range[1], cs.y_range[1]];
+    const d = [cs.x_range[1], cs.y_range[0]];
+    moveTo(path2D, cs, a);
+    for (const path of paths) {
+        lineTo(path2D, cs, Geo.getStartPoint(path, 0));
+        drawPath(path2D, cs, path);
+        lineTo(path2D, cs, a);
+    }
+    lineTo(path2D, cs, b);
+    lineTo(path2D, cs, c);
+    lineTo(path2D, cs, d);
+    path2D.closePath();
+    return path2D;
+}
+export function toCanvasPath(cs, path, hide) {
+    const path2D = new Path2D();
+    moveTo(path2D, cs, Geo.getStartPoint(path, 0));
+    drawPath(path2D, cs, path, hide);
     // path cannot be closed if some segments is hiding
     if (hide === undefined && path.is_closed) {
         path2D.closePath();

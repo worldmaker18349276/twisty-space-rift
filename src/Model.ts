@@ -1301,7 +1301,7 @@ export namespace PrincipalPuzzle {
     puzzle: PrincipalPuzzle,
   ): {
     layers: Map<Piece, Geo.Path<Geo.CutSource<Edge, undefined>>[]>[],
-    rifts: Geo.Path<undefined>[],
+    rifts: Geo.Path<Geo.CutSourceSeg<undefined>>[],
   } | undefined {
     const RETRY = 5;
     const PERTURBATION = 1e-4;
@@ -1313,7 +1313,7 @@ export namespace PrincipalPuzzle {
       n: number,
     ): Result<{
       layers: Map<Piece, Geo.Path<Geo.CutSource<Edge, undefined>>[]>[],
-      rifts: Geo.Path<undefined>[],
+      rifts: Geo.Path<Geo.CutSourceSeg<undefined>>[],
       branch_points: {order:number[]|undefined, perm:CyclicPerm}[],
     }> {
       const res1 = calculateCuttedRiftShapes(puzzle, puzzle.rift_endpoints, rifts, puzzle.rift_hierarchy);
@@ -1336,7 +1336,11 @@ export namespace PrincipalPuzzle {
         perm: perm ?? puzzle.rift_endpoints[i].perm,
         order,
       }));
-      return Result.ok({layers: res3.result.layers, rifts: res1.result.rift_shapes, branch_points});
+      return Result.ok({
+        layers: res3.result.layers,
+        rifts: res1.result.cutted_rift_shapes,
+        branch_points,
+      });
     }
 
     let res = go(puzzle.rifts, 0);
@@ -2012,7 +2016,12 @@ export namespace PrincipalPuzzleWithTexture {
     );
   }
 
-  export function calculateClippedImages<Image>(puzzle: PrincipalPuzzleWithTexture<Image>): {images:Set<ClippedImage<Image>>[], rifts:Geo.Path<undefined>[]} | undefined {
+  export function calculateClippedImages<Image>(
+    puzzle: PrincipalPuzzleWithTexture<Image>,
+  ): {
+    images:Set<ClippedImage<Image>>[],
+    rifts: Geo.Path<Geo.CutSourceSeg<undefined>>[],
+  } | undefined {
     const positions = getPositions(puzzle);
     const clipped_shapes = PrincipalPuzzle.calculateClippedShapesAndUpdateOrders(puzzle);
     if (clipped_shapes === undefined) return undefined;
