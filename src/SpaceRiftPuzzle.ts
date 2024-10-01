@@ -65,6 +65,7 @@ export class SpaceRiftPuzzle {
   current_images: Set<Model.ClippedImage<{canvas:HTMLCanvasElement, trans:Draw.CanvasMatrix}>>;
   current_rifts: Geo.Path<undefined>[];
   render_frame: boolean = true;
+  render_ruler: boolean = false;
   rendering_layer: number = 0;
   focus_piece: Model.Piece | undefined = undefined;
   
@@ -279,6 +280,85 @@ export class SpaceRiftPuzzle {
       ctx.lineWidth = 2;
       ctx.strokeStyle = FOCUS_FRAME_COLOR;
       ctx.stroke(path);
+    }
+
+    // ruler
+    if (this.render_ruler) {
+      const TICK_LEN = 6;
+      const TICK_WIDTH = 2;
+      const SUBTICK_LEN = 3;
+      const SUBTICK_WIDTH = 1;
+      const [x0, x1] = this.cs.x_range;
+      for (let y = Math.ceil(this.cs.y_range[0] * 10) / 10; y < this.cs.y_range[1]; y += 0.1) {
+        const [i, j] = Draw.toViewport(this.cs, [x0, y]);
+        ctx.beginPath();
+        ctx.moveTo(i, j);
+        ctx.lineTo(i + SUBTICK_LEN, j);
+        ctx.lineWidth = SUBTICK_WIDTH;
+        ctx.strokeStyle = "black";
+        ctx.stroke();
+        if (Math.abs(y - Math.round(y)) < 1e-5) {
+          ctx.beginPath();
+          ctx.moveTo(i, j);
+          ctx.lineTo(i + TICK_LEN, j);
+          ctx.lineWidth = TICK_WIDTH;
+          ctx.strokeStyle = "black";
+          ctx.stroke();
+        }
+      }
+      for (let y = Math.ceil(this.cs.y_range[0] * 10) / 10; y < this.cs.y_range[1]; y += 0.1) {
+        const [i, j] = Draw.toViewport(this.cs, [x1, y]);
+        ctx.beginPath();
+        ctx.moveTo(i, j);
+        ctx.lineTo(i - SUBTICK_LEN, j);
+        ctx.lineWidth = SUBTICK_WIDTH;
+        ctx.strokeStyle = "black";
+        ctx.stroke();
+        if (Math.abs(y - Math.round(y)) < 1e-5) {
+          ctx.beginPath();
+          ctx.moveTo(i, j);
+          ctx.lineTo(i - TICK_LEN, j);
+          ctx.lineWidth = TICK_WIDTH;
+          ctx.strokeStyle = "black";
+          ctx.stroke();
+        }
+      }
+
+      const [y0, y1] = this.cs.y_range;
+      for (let x = Math.ceil(this.cs.x_range[0] * 10) / 10; x < this.cs.x_range[1]; x += 0.1) {
+        const [i, j] = Draw.toViewport(this.cs, [x, y0]);
+        ctx.beginPath();
+        ctx.moveTo(i, j);
+        ctx.lineTo(i, j - SUBTICK_LEN);
+        ctx.lineWidth = SUBTICK_WIDTH;
+        ctx.strokeStyle = "black";
+        ctx.stroke();
+        if (Math.abs(x - Math.round(x)) < 1e-5) {
+          ctx.beginPath();
+          ctx.moveTo(i, j);
+          ctx.lineTo(i, j - TICK_LEN);
+          ctx.lineWidth = TICK_WIDTH;
+          ctx.strokeStyle = "black";
+          ctx.stroke();
+        }
+      }
+      for (let x = Math.ceil(this.cs.x_range[0] * 10) / 10; x < this.cs.x_range[1]; x += 0.1) {
+        const [i, j] = Draw.toViewport(this.cs, [x, y1]);
+        ctx.beginPath();
+        ctx.moveTo(i, j);
+        ctx.lineTo(i, j + SUBTICK_LEN);
+        ctx.lineWidth = SUBTICK_WIDTH;
+        ctx.strokeStyle = "black";
+        ctx.stroke();
+        if (Math.abs(x - Math.round(x)) < 1e-5) {
+          ctx.beginPath();
+          ctx.moveTo(i, j);
+          ctx.lineTo(i, j + TICK_LEN);
+          ctx.lineWidth = TICK_WIDTH;
+          ctx.strokeStyle = "black";
+          ctx.stroke();
+        }
+      }
     }
 
     // // for debug

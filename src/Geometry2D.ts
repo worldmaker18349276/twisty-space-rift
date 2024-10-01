@@ -1,4 +1,4 @@
-import {assert, indices, mod} from "./Utils.js";
+import {assert, clamp, indices, mod} from "./Utils.js";
 
 export type Vector2 = [x:number, y:number];
 export type Matrix2x3 = [[number, number, number], [number, number, number]];
@@ -190,12 +190,22 @@ export function getPointOnLine(line: DirectionalLine, coordinate: Distance): Poi
   return add(line.center, mul(line.direction, coordinate));
 }
 
-export enum PathSegType { Arc, Line }
+export enum PathSegType { Arc = "Arc", Line = "Line" }
 export type PathSegLine<T> =
   { type: PathSegType.Line, target: Point, line: DirectionalLine, len: Distance, source: T };
 export type PathSegArc<T> =
   { type: PathSegType.Arc, target: Point, circle: DirectionalCircle, len: Angle, source: T };
 export type PathSeg<T> = PathSegLine<T> | PathSegArc<T>;
+
+export function pathSegToString(path: Path<any>, index: number): string {
+  if (path.segs[index].type === PathSegType.Line) {
+    return `line([${getStartPoint(path, index)}], [${getEndPoint(path, index)}])`;
+  } else {
+    const seg = path.segs[index];
+    assert(seg.type === PathSegType.Arc);
+    return `arc([${getStartPoint(path, index)}], [${getEndPoint(path, index)}], c=[${seg.circle.center}])`;
+  }
+}
 
 // angle between segments should not be larger than PI
 // arc should not be closed to 2PI
@@ -489,7 +499,7 @@ export function intersectLineAndCircle(
 }
 
 
-export enum CutSourceType { Seg, LeftCut, RightCut }
+export enum CutSourceType { Seg = "Seg", LeftCut = "LeftCut", RightCut = "RightCut" }
 export type CutSourceSeg<T> =
   | {
     type: CutSourceType.Seg;
@@ -842,11 +852,13 @@ export function cutRegion<T, S>(
     .sort((a, b) =>
       (intersections[a].pos1[0] - intersections[b].pos1[0])
       || (intersections[a].pos1[1] - intersections[b].pos1[1])
+      || ((intersections[a].ccw ? -1 : 0) - (intersections[b].ccw ? -1 : 0))
     );
   const order2 = indices(intersections.length)
     .sort((a, b) =>
       (intersections[a].pos2[0] - intersections[b].pos2[0])
       || (intersections[a].pos2[1] - intersections[b].pos2[1])
+      || ((intersections[a].ccw ? 1 : 0) - (intersections[b].ccw ? 1 : 0))
     );
 
   const res: Path<CutSource<T, S>>[] = [];
@@ -860,40 +872,33 @@ export function cutRegion<T, S>(
     let order1_index = first_order1_index;
     for (const _ of indices(intersections.length)) {
       const order1_index_from = order1_index;
-      const order1_index_to = mod(order1_index_from + 1, order1.length);
+      const order1_index_to = order1_index_from + 1;
       
       assert(order1_indices.has(order1_index_from));
       order1_indices.delete(order1_index_from);
       
-      const index_from = order1[order1_index_from];
-      const index_to = order1[order1_index_to];
-      const intersection_from = intersections[index_from];
-      const intersection_to = intersections[index_to];
+      const intersection_from = intersections[order1[order1_index_from]];
+      const intersection_to = intersections[order1[mod(order1_index_to, order1.length)]];
 
       segs.push(...cutPath<T, S>(path, intersection_from.pos1, intersection_to.pos1, CutSourceType.Seg));
  
-      const order2_index_from = order2.indexOf(index_to);
+      const order2_index_from = order2.indexOf(order1[mod(order1_index_to, order1.length)]);
       assert(order2_index_from !== -1);
-      const order2_index_to =
-        intersection_to.ccw ?
-          Math.min(order2_index_from + 1, order2.length - 1)
-        : Math.max(order2_index_from - 1, 0);
+      const order2_index_to = intersection_to.ccw ? order2_index_from + 1 : order2_index_from - 1;
 
-      const index_from_ = order2[order2_index_from];
-      const index_to_ = order2[order2_index_to];
-      const intersection_from_ = intersections[index_from_];
-      const intersection_to_ = intersections[index_to_];
+      const intersection_from_ = intersections[order2[order2_index_from]];
+      const intersection_to_ = intersections[order2[clamp(order2_index_to, 0, order2.length - 1)]];
 
-      if (index_from_ !== index_to_ && intersection_from_.ccw === intersection_to_.ccw)
+      if (order2_index_to >= 0 && order2_index_to < order2.length) {
+        if (intersection_from_.ccw === intersection_to_.ccw)
         return undefined;
       
-      if (index_from_ !== index_to_) {
         segs.push(...cutPath<T, S>(
           cut, intersection_from_.pos2, intersection_to_.pos2,
           intersection_from_.ccw ? CutSourceType.LeftCut : CutSourceType.RightCut
         ));
 
-      } else if (index_from_ === 0) {
+      } else if (order2_index_to < 0) {
         const start: [index:number, t:number] = [0, 0];
         segs.push(...cutPath<T, S>(
           cut, intersection_from_.pos2, start,
@@ -904,7 +909,7 @@ export function cutRegion<T, S>(
           CutSourceType.LeftCut
         ));
 
-      } else {
+      } else if (order2_index_to >= order2.length) {
         const end: [index:number, t:number] = [cut.segs.length - 1, cut.segs[cut.segs.length - 1].len];
         segs.push(...cutPath<T, S>(
           cut, intersection_from_.pos2, end,
@@ -914,9 +919,12 @@ export function cutRegion<T, S>(
           cut, end, intersection_from_.pos2,
           CutSourceType.RightCut
         ));
+
+      } else {
+        assert(false);
       }
 
-      order1_index = order1.indexOf(index_to_);
+      order1_index = order1.indexOf(order2[clamp(order2_index_to, 0, order2.length - 1)]);
       assert(order1_index !== -1);
       if (order1_index === first_order1_index) break;
     }
@@ -995,37 +1003,4 @@ export function hasIncompleteCut<T, S>(path: Path<CutSource<T, S>>, cut: Path<S>
     && path.segs[end_index + 1].source.to === seg1.len;
 
   return incomplete_start_cut || incomplete_end_cut;
-}
-
-export function glueIncompleteCut<T, S>(path: Path<CutSource<T, S>>, cut: Path<S>): Path<CutSource<T, S>> {
-  assert(path.is_closed);
-  const seg0 = cut.segs[0];
-  const start_index = path.segs
-    .map(seg => seg.source)
-    .findIndex(source => source.ref === seg0 && source.to === 0 && source.type === CutSourceType.RightCut);
-  const incomplete_start_cut =
-    start_index !== -1
-    && start_index + 1 < path.segs.length
-    && path.segs[start_index + 1].source.type === CutSourceType.LeftCut
-    && path.segs[start_index + 1].source.ref === seg0
-    && path.segs[start_index + 1].source.from === 0;
-
-  const seg1 = cut.segs[cut.segs.length - 1];
-  const end_index = path.segs
-    .map(seg => seg.source)
-    .findIndex(source => source.ref === seg1 && source.to === seg1.len && source.type === CutSourceType.LeftCut);
-  const incomplete_end_cut =
-    end_index !== -1
-    && end_index + 1 < path.segs.length
-    && path.segs[end_index + 1].source.type === CutSourceType.RightCut
-    && path.segs[end_index + 1].source.ref === seg1
-    && path.segs[end_index + 1].source.to === seg1.len;
-
-  if (!incomplete_start_cut && !incomplete_end_cut) return path;
-
-  const segs = indices(path.segs.length)
-    .filter(i => !incomplete_start_cut || i !== start_index && i !== start_index + 1)
-    .filter(i => !incomplete_end_cut || i !== end_index && i !== end_index + 1)
-    .map(i => path.segs[i]);
-  return { is_closed: true, segs };
 }

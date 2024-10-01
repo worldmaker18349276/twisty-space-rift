@@ -21,6 +21,7 @@ import {
   CyclicPerm,
   Digraph,
 } from "./Utils.js";
+import { pathSegToString } from "./Geometry2D.js";
 
 export type Edge = {
   aff: Piece;
@@ -1167,13 +1168,13 @@ export namespace PrincipalPuzzle {
       if (!left_crossing) {
         const index = rifts[rift_index].left;
         if (cmp(branch_point_perms[index], puzzle.branch_points[index].perm) !== 0) {
-          return Result.err("branch point's permutation changes without crossing");
+          return Result.err(`${index}-th branch point's permutation changes without crossing`);
         }
       }
       if (!right_crossing) {
         const index = rifts[rift_index].right;
         if (cmp(branch_point_perms[index], puzzle.branch_points[index].perm) !== 0) {
-          return Result.err("branch point's permutation changes without crossing");
+          return Result.err(`${index}-th branch point's permutation changes without crossing`);
         }
       }
     }
@@ -1374,8 +1375,11 @@ export namespace PrincipalPuzzle {
     seg: Geo.PathSeg<Geo.CutSourceSeg<Edge>>,
     shapes: Map<Piece, Geo.Path<Edge>>,
     cutted_shapes: Map<Piece, Geo.Path<Geo.CutSource<Edge, undefined>>[]>,
-  ): Geo.Path<Geo.CutSource<Edge, undefined>>[] {
-    const res: Geo.Path<Geo.CutSource<Edge, undefined>>[] = [];
+  ): {
+    path: Geo.Path<Geo.CutSource<Edge, undefined>>,
+    index: number,
+  }[] {
+    const res: { path: Geo.Path<Geo.CutSource<Edge, undefined>>, index: number }[] = [];
 
     const edge = seg.source.ref.source;
     const len = shapes.get(edge.aff)!.segs[edge.aff.edges.indexOf(edge)].len;
@@ -1393,14 +1397,19 @@ export namespace PrincipalPuzzle {
       const adj_to = adj.offset - from;
 
       for (const adj_path of cutted_shapes.get(adj_edge.aff)!) {
-        for (const adj_seg of adj_path.segs) {
+        for (const adj_index of indices(adj_path.segs.length)) {
+          const adj_seg = adj_path.segs[adj_index];
           if (!(adj_seg.source.type === Geo.CutSourceType.Seg && adj_seg.source.ref.source === adj_edge)) continue;
           const adj_from_ = Math.max(adj_seg.source.from ?? 0, adj_from);
           const adj_to_ = Math.min(adj_seg.source.to ?? seg.source.ref.len, adj_to);
 
-          if (adj_to_ - adj_from_ < SMALLEST_ADJ_LEN) continue;
+          const adj_len =
+            adj_seg.source.ref.type === Geo.PathSegType.Line ?
+              adj_to_ - adj_from_
+            : (adj_to_ - adj_from_) * Math.abs(adj_seg.source.ref.circle.radius);
+          if (adj_len < SMALLEST_ADJ_LEN) continue;
 
-          res.push(adj_path);
+          res.push({path:adj_path, index:adj_index});
           break;
         }
       }
@@ -1414,8 +1423,12 @@ export namespace PrincipalPuzzle {
     cutted_rift_shapes: Geo.Path<Geo.CutSourceSeg<undefined>>[],
     rift_perms: Map<Geo.PathSeg<Geo.CutSourceSeg<undefined>>, CyclicPerm>,
     cutted_shapes: Map<Piece, Geo.Path<Geo.CutSource<Edge, undefined>>[]>,
-  ): [Geo.Path<Geo.CutSource<Edge, undefined>>, CyclicPerm][] {
-    const res: [Geo.Path<Geo.CutSource<Edge, undefined>>, CyclicPerm][] = [];
+  ): {
+    path: Geo.Path<Geo.CutSource<Edge, undefined>>,
+    index: number,
+    perm: CyclicPerm,
+  }[] {
+    const res: { path: Geo.Path<Geo.CutSource<Edge, undefined>>, index: number, perm: CyclicPerm }[] = [];
 
     const rift_seg = seg.source.ref;
     const rift_index = rift_shapes.findIndex(path => path.segs.includes(rift_seg));
@@ -1463,7 +1476,8 @@ export namespace PrincipalPuzzle {
         Geo.CutSourceType.RightCut : Geo.CutSourceType.LeftCut;
 
     for (const adj_shape of cutted_shapes.get(piece)!) {
-      for (const adj_seg of adj_shape.segs) {
+      for (const adj_index of indices(adj_shape.segs.length)) {
+        const adj_seg = adj_shape.segs[adj_index];
         if (!(adj_seg.source.type === adj_type && adj_seg.source.ref === rift_seg)) continue;
         const [adj_src_from, adj_src_to] =
           adj_seg.source.type === Geo.CutSourceType.LeftCut ?
@@ -1474,9 +1488,17 @@ export namespace PrincipalPuzzle {
           const adj_from = Math.max(adj_src_from ?? 0, range[0]);
           const adj_to = Math.min(adj_src_to ?? rift_seg.len, range[1]);
 
-          if (adj_to - adj_from < SMALLEST_ADJ_LEN) continue;
+          const adj_len =
+            rift_seg.type === Geo.PathSegType.Line ?
+              adj_to - adj_from
+            : (adj_to - adj_from) * Math.abs(rift_seg.circle.radius);
+          if (adj_len < SMALLEST_ADJ_LEN) continue;
 
-          res.push([adj_shape, perm]);
+          res.push({
+            path: adj_shape,
+            index: adj_index,
+            perm,
+          });
           break;
         }
       }
@@ -1504,23 +1526,23 @@ export namespace PrincipalPuzzle {
     ): Result<Geo.Path<Geo.CutSource<Edge, undefined>>[]> {
       const INSIDE_DIS = -1e-3;
 
-      for (const rift_shape of rift_shapes) {
+      for (const rift_index of indices(rift_shapes.length)) {
+        const rift_shape = rift_shapes[rift_index];
         const shapes_: Geo.Path<Geo.CutSource<Edge, undefined>>[] = [];
         for (const shape of shapes) {
           const res = Geo.cutRegion(shape, rift_shape);
           if (res === undefined) {
-            return Result.err(`fail to cut piece ${name}`);
+            return Result.err(`fail to cut piece ${name} (${rift_index}-th cut)`);
           }
-          const dis1 = Geo.calculateNearestPoint(shape, Geo.getStartPoint(rift_shape)).dis;
-          const dis2 = Geo.calculateNearestPoint(shape, Geo.getEndPoint(rift_shape)).dis;
-          if (dis1 < INSIDE_DIS || dis2 < INSIDE_DIS) {
-            shapes_.push(...res.map(path => Geo.flattenCut(Geo.glueIncompleteCut(path, rift_shape))));
-            
-          } else if (res.some(path => Geo.hasIncompleteCut(path, rift_shape))) {
-            return Result.err(`fail to cut piece ${name}`);
-          } else {
-            shapes_.push(...res.map(path => Geo.flattenCut(path)));
+          if (res.some(path => Geo.hasIncompleteCut(path, rift_shape))) {
+            const dis1 = Geo.calculateNearestPoint(shape, Geo.getStartPoint(rift_shape)).dis;
+            const dis2 = Geo.calculateNearestPoint(shape, Geo.getEndPoint(rift_shape)).dis;
+            const is_incompletecut = dis1 < INSIDE_DIS || dis2 < INSIDE_DIS;
+            if (!is_incompletecut) {
+              return Result.err(`invalid incomplete cut on piece ${name} (${rift_index}-th cut)`);
+            }
           }
+          shapes_.push(...res.map(path => Geo.flattenCut(path)));
         }
         shapes = shapes_;
       }
@@ -1588,9 +1610,6 @@ export namespace PrincipalPuzzle {
         if (res0 === undefined) {
           return Result.err(`fail to cut ramified piece: ${piece.name}`);
         }
-        if (res0.some(path => Geo.hasIncompleteCut(path, rift_shape))) {
-          return Result.err(`fail to cut ramified piece: ${piece.name}`);
-        }
 
         // cut by other rifts
         const res = cut(res0, rift_shapes.filter((_, i) => i !== rift_index), piece.name);
@@ -1639,14 +1658,36 @@ export namespace PrincipalPuzzle {
     orders: (number[] | undefined)[],
   }> {
     const cutted_shapes_layer = new Map<Geo.Path<Geo.CutSource<Edge, undefined>>, number>();
+
+    function setLayer(
+      cutted_shape: Geo.Path<Geo.CutSource<Edge, undefined>>,
+      layer_index: number,
+      reason: () => string,
+    ): Result<{}> {
+      const layer_index_ = cutted_shapes_layer.get(cutted_shape);
+      if (layer_index_ !== undefined) {
+        if (layer_index_ === layer_index) {
+          return Result.ok({});
+        }
+        const name = cutted_shape.segs
+          .find(seg => seg.source.type === Geo.CutSourceType.Seg)
+          ?.source.ref.source
+          ?.aff.name
+          ?? "<unknown>";
+        return Result.err(`conflict layer ${name}: ${reason()}\n  ${layer_index} != ${layer_index_}`);
+      }
+      cutted_shapes_layer.set(cutted_shape, layer_index);
+      return Result.ok({});
+    }
+
     for (const [branch_point, cutted_shapes] of zip(puzzle.branch_points, cutted_ramified_shapes)) {
       if (branch_point.order !== undefined) {
         for (const [cutted_shape, layer_index] of zip(cutted_shapes, branch_point.order)) {
-          cutted_shapes_layer.set(cutted_shape, layer_index);
+          setLayer(cutted_shape, layer_index, () => "seed");
         }
       }
     }
-
+    
     const orders: (number[] | undefined)[] = puzzle.branch_points.map(branch_point => branch_point.order);
 
     for (const [path, layer_index] of cutted_shapes_layer) {
@@ -1674,13 +1715,9 @@ export namespace PrincipalPuzzle {
         }
 
         for (const [cutted_shape, turn_layer_index] of zip(cutted_ramified_shapes[ramified_index], order)) {
-          if (cutted_shapes_layer.has(cutted_shape)) {
-            if (cutted_shapes_layer.get(cutted_shape) !== turn_layer_index) {
-              return Result.err(`conflict layer: (determined by turn) ${turn_layer_index} != ${cutted_shapes_layer.get(cutted_shape)} in ${ramified_index}-th branch point`);
-            }
-          } else {
-            cutted_shapes_layer.set(cutted_shape, turn_layer_index);
-          }
+          const reason = () => `determined by ramification at ${ramified_index}-th branch point`;
+          const res = setLayer(cutted_shape, turn_layer_index, reason);
+          if (!res.ok) return res;
         }
 
         if (orders[ramified_index] === undefined) {
@@ -1688,8 +1725,13 @@ export namespace PrincipalPuzzle {
         }
       }
 
-      for (const seg of path.segs) {
-        let adj_paths: [Geo.Path<Geo.CutSource<Edge, undefined>>, CyclicPerm | undefined][];
+      for (const i of indices(path.segs.length)) {
+        const seg = path.segs[i];
+        let adj_paths: {
+          path: Geo.Path<Geo.CutSource<Edge, undefined>>,
+          index: number,
+          perm: CyclicPerm | undefined,
+        }[];
         if (seg.source.type === Geo.CutSourceType.Seg) {
           // find adjacent edges
           adj_paths = getAdjacentSegs(
@@ -1698,7 +1740,7 @@ export namespace PrincipalPuzzle {
             shapes,
             cutted_shapes,
           )
-          .map(adj_path => [adj_path, undefined]);
+          .map(adj => ({...adj, perm:undefined}));
         } else {
           // find adjacent edges
           adj_paths = getAdjacentRiftSegs(
@@ -1710,19 +1752,14 @@ export namespace PrincipalPuzzle {
           );
         }
 
-        for (const [adj_path, perm] of adj_paths) {
-          const adj_layer_index = applyCyclicPerm(perm ?? [], 1, layer_index);
-          if (cutted_shapes_layer.has(adj_path)) {
-            if (cutted_shapes_layer.get(adj_path) !== adj_layer_index) {
-              if (perm === undefined) {
-                return Result.err(`conflict layer: (determined by edge adjacency) ${layer_index} != ${cutted_shapes_layer.get(adj_path)}`);
-              } else {
-                return Result.err(`conflict layer: (determined by cut adjacency) [${perm}] * ${layer_index} != ${cutted_shapes_layer.get(adj_path)}`);
-              }
-            }
-          } else {
-            cutted_shapes_layer.set(adj_path, adj_layer_index);
-          }
+        for (const adj of adj_paths) {
+          const adj_layer_index = applyCyclicPerm(adj.perm ?? [], 1, layer_index);
+          const reason = () =>
+              `determined by ${adj.perm === undefined ? "edge" : "cut"} adjacency,
+              ${pathSegToString(path, i)}
+              => ${pathSegToString(adj.path, adj.index)}`
+          const res = setLayer(adj.path, adj_layer_index, reason);
+          if (!res.ok) return res;
         }
       }
     }

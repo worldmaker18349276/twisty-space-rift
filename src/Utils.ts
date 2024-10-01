@@ -27,6 +27,10 @@ export function mod(x: number, n: number): number {
   return (x % n + n) % n;
 }
 
+export function clamp(x: number, min: number, max: number): number {
+  return Math.min(Math.max(x, min), max);
+}
+
 export function zip<A, B>(a: A[], b: B[]): [A, B][] {
   return indices(Math.min(a.length, b.length)).map(i => [a[i], b[i]]);
 }
