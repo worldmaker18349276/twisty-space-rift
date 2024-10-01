@@ -19,7 +19,7 @@
         console.log(puzzle);
       }
     }
-    window.addEventListener("load", () => load(window.location.hash.slice(1)));
+    window.addEventListener("load", () => load(window.location.hash.slice(1) || "D2H"));
     window.addEventListener("hashchange", () => load(window.location.hash.slice(1)));
   </script>
 
@@ -55,6 +55,10 @@
       background-color: var(--inactive-color);
     }
 
+    ul.tab-list a:focus {
+      outline: none;
+    }
+
     ul.tab-list a:hover {
       background-color: var(--hover-color);
     }
@@ -62,10 +66,36 @@
     ul.tab-list a:target {
       background-color: var(--active-color);
     }
+
+    ul.tab-list button {
+      display: block;
+      padding: 5px 10px;
+      border: none;
+      color: var(--font-color);
+      background-color: var(--inactive-color);
+    }
+
+    ul.tab-list button:focus {
+      outline: none;
+    }
+
+    ul.tab-list button:hover {
+      background-color: var(--hover-color);
+    }
+
+    dialog#help {
+      border: none;
+    }
+    dialog#help button {
+      display: block;
+      padding: 5px 10px;
+      border: none;
+    }
   </style>
 </head>
 <body>
   <ul class="tab-list">
+    <li><button onclick="document.querySelector('#help').showModal()">?</button></li>
     <li><a id="D2H" href="#D2H">Dipole(2) H</a></li>
     <li><a id="D2V" href="#D2V">Dipole(2) V</a></li>
     <li><a id="D3H" href="#D3H">Dipole(3) H</a></li>
@@ -74,5 +104,17 @@
     <li><a id="DD" href="#DD">Dipole(2)^2</a></li>
   </ul>
   <canvas id="main" width="600" height="400"></canvas>
+  <dialog id="help">
+    <h2>How To Play</h2>
+    <p><b>Left/Right-click</b> to twist the puzzle.</p>
+    <p>Use <b>wheel</b> to rotate rifts, or <b>drag</b> them on the turning point.</p>
+    <p><b>Middle-click</b> to change active layer.</p>
+    <p><b>Shift-drag</b> to draw on the puzzle.</p>
+
+    <!-- <p>Ctrl-click to select a piece of the puzzle.</p>
+    <p>Press "c" to open command palette.</p> -->
+
+    <button autofocus onclick="document.querySelector('#help').close()">Close</button>
+  </dialog>
 </body>
 </html>
