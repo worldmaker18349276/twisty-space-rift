@@ -3,25 +3,76 @@
 <head>
   <meta charset="UTF-8" />
   <title>Space Rift Intersecting Circle Puzzles</title>
+  <script type="module">
+    import {SpaceRiftPuzzle} from "./build/SpaceRiftPuzzle.js";
+
+    let puzzle = undefined;
+    function load(variant) {
+      if (puzzle !== undefined) {
+        puzzle.deinit();
+      }
+      const canvas = document.getElementById("main");
+      puzzle = SpaceRiftPuzzle.make(variant, canvas);
+      if (puzzle !== undefined) {
+        document.title = puzzle.name;
+        puzzle.init();
+        console.log(puzzle);
+      }
+    }
+    window.addEventListener("load", () => load(window.location.hash.slice(1)));
+    window.addEventListener("hashchange", () => load(window.location.hash.slice(1)));
+  </script>
+
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 0;
+    }
+
+    ul {
+      --font-color: #333;
+      --inactive-color: #f1f1f1;
+      --hover-color: #ddd;
+      --active-color: #fff;
+    }
+
+    ul.tab-list {
+      list-style-type: none;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      overflow: hidden;
+      background-color: var(--inactive-color);
+    }
+
+    ul.tab-list a {
+      display: block;
+      padding: 5px 10px;
+      text-decoration: none;
+      text-wrap: nowrap;
+      color: var(--font-color);
+      background-color: var(--inactive-color);
+    }
+
+    ul.tab-list a:hover {
+      background-color: var(--hover-color);
+    }
+
+    ul.tab-list a:target {
+      background-color: var(--active-color);
+    }
+  </style>
 </head>
 <body>
-  <h1>Space Rift Intersecting Circle Puzzles</h1>
-  <a href="./SpaceRift_D2H.html">
-    <h2>Space Rift Dipole(2) H</h2>
-    <img src="./img/SpaceRift_D2H.png"/>
-  </a>
-  <a href="./SpaceRift_D2V.html">
-    <h2>Space Rift Dipole(2) V</h2>
-    <img src="./img/SpaceRift_D2V.png"/>
-  </a>
-  <a href="./SpaceRift_D3H.html">
-    <h2>Space Rift Dipole(3) H</h2>
-  </a>
-  <a href="./SpaceRift_D3V.html">
-    <h2>Space Rift Dipole(3) V</h2>
-  </a>
-  <a href="./SpaceRift_Q3.html">
-    <h2>Space Rift Quadrapole(3)</h2>
-  </a>
+  <ul class="tab-list">
+    <li><a id="D2H" href="#D2H">Dipole(2) H</a></li>
+    <li><a id="D2V" href="#D2V">Dipole(2) V</a></li>
+    <li><a id="D3H" href="#D3H">Dipole(3) H</a></li>
+    <li><a id="D3V" href="#D3V">Dipole(3) V</a></li>
+    <li><a id="Q3" href="#Q3">Quadrapole(3)</a></li>
+    <li><a id="DD" href="#DD">Dipole(2)^2</a></li>
+  </ul>
+  <canvas id="main" width="600" height="400"></canvas>
 </body>
 </html>

@@ -23,13 +23,29 @@ const WHEEL_TO_RIFTOFFSET = 0.001;
 const DRAG_RIFT_RADIUS = 0.3;
 export var PuzzleVariant;
 (function (PuzzleVariant) {
-    PuzzleVariant["Dipole2H"] = "Dipole(2) H";
-    PuzzleVariant["Dipole2V"] = "Dipole(2) V";
-    PuzzleVariant["Dipole3H"] = "Dipole(3) H";
-    PuzzleVariant["Dipole3V"] = "Dipole(3) V";
-    PuzzleVariant["Quadrapole3"] = "Quadrapole(3)";
-    PuzzleVariant["Dipole_2"] = "Dipole(2)^2";
+    PuzzleVariant["D2H"] = "D2H";
+    PuzzleVariant["D2V"] = "D2V";
+    PuzzleVariant["D3H"] = "D3H";
+    PuzzleVariant["D3V"] = "D3V";
+    PuzzleVariant["Q3"] = "Q3";
+    PuzzleVariant["DD"] = "DD";
 })(PuzzleVariant || (PuzzleVariant = {}));
+const names = new Map([
+    [PuzzleVariant.D2H, "Dipole(2) H"],
+    [PuzzleVariant.D2V, "Dipole(2) V"],
+    [PuzzleVariant.D3H, "Dipole(3) H"],
+    [PuzzleVariant.D3V, "Dipole(3) V"],
+    [PuzzleVariant.Q3, "Quadrapole(3)"],
+    [PuzzleVariant.DD, "Dipole(2)^2"],
+]);
+const builders = new Map([
+    [PuzzleVariant.D2H, () => Model.Builder.DH(2, 1)],
+    [PuzzleVariant.D2V, () => Model.Builder.DV(2, 1)],
+    [PuzzleVariant.D3H, () => Model.Builder.DH(3, 1)],
+    [PuzzleVariant.D3V, () => Model.Builder.DV(3, 1)],
+    [PuzzleVariant.Q3, () => Model.Builder.Q(3, 1)],
+    [PuzzleVariant.DD, () => Model.Builder.DD(1)],
+]);
 export class SpaceRiftPuzzle {
     constructor(arg) {
         this.render_frame = true;
@@ -38,14 +54,20 @@ export class SpaceRiftPuzzle {
         this.rendering_layer = 0;
         this.focus_piece = undefined;
         this.variant = arg.variant;
+        this.name = arg.name;
         this.canvas = arg.canvas;
+        this.disposable = new Disposable();
         this.model = arg.model;
         this.cs = arg.cs;
         this.control_state = { type: PuzzleControlStateType.Ready };
         this.current_images = new Set();
         this.current_rifts = [];
     }
-    static make(canvas, variant = PuzzleVariant.Dipole2H) {
+    static make(variant, canvas) {
+        const name = names.get(variant);
+        if (name === undefined)
+            return undefined;
+        const builder = builders.get(variant)();
         const zoomout_scale = 1; // for debug
         const cs = Draw.makeCoordinateSystem({
             width_pixel: canvas.clientWidth,
@@ -58,37 +80,18 @@ export class SpaceRiftPuzzle {
             center_x: 1,
             R: Math.sqrt(cs.x_range[0] * cs.x_range[0] + cs.y_range[0] * cs.y_range[0]) * 1.5 / zoomout_scale,
         };
-        let builder;
-        if (variant === PuzzleVariant.Dipole2H) {
-            builder = Model.Builder.DH(2, 1);
-        }
-        else if (variant === PuzzleVariant.Dipole2V) {
-            builder = Model.Builder.DV(2, 1);
-        }
-        else if (variant === PuzzleVariant.Dipole3H) {
-            builder = Model.Builder.DH(3, 1);
-        }
-        else if (variant === PuzzleVariant.Dipole3V) {
-            builder = Model.Builder.DV(3, 1);
-        }
-        else if (variant === PuzzleVariant.Quadrapole3) {
-            builder = Model.Builder.Q(3, 1);
-        }
-        else if (variant === PuzzleVariant.Dipole_2) {
-            builder = Model.Builder.DD(1);
-        }
-        else {
-            assert(false);
-        }
         const image_x_range = [cs.x_range[0], cs.x_range[1]];
         const image_y_range = [cs.y_range[0], cs.y_range[1]];
         const drawComplex = (f) => Draw.drawComplex(cs, f, image_x_range, image_y_range);
         const model = Model.PrincipalPuzzleWithTexture.makePuzzle(builder, shape, drawComplex);
-        return new SpaceRiftPuzzle({ variant, canvas, model, cs });
+        return new SpaceRiftPuzzle({ variant, name, canvas, model, cs });
     }
     init() {
         this.registerController();
         this.registerRenderEvent();
+    }
+    deinit() {
+        this.disposable.dispose();
     }
     update() {
         const time = Date.now();
@@ -524,7 +527,7 @@ export class SpaceRiftPuzzle {
             console.log(piece);
             this.focus(this.focus_piece === piece ? undefined : piece);
         };
-        this.canvas.addEventListener("wheel", event => {
+        this.disposable.addEventListener(this.canvas, "wheel", event => {
             event.preventDefault();
             if (this.current_rifts.length === 0)
                 return;
@@ -537,8 +540,8 @@ export class SpaceRiftPuzzle {
             const point = this.getPosition(event);
             scroll_rift(point, event.deltaX, event.deltaY);
         }, false);
-        this.canvas.addEventListener("contextmenu", event => event.preventDefault(), false);
-        this.canvas.addEventListener("mousedown", event => {
+        this.disposable.addEventListener(this.canvas, "contextmenu", event => event.preventDefault(), false);
+        this.disposable.addEventListener(this.canvas, "mousedown", event => {
             event.preventDefault();
             if (is_dragging_rift())
                 return;
@@ -570,7 +573,7 @@ export class SpaceRiftPuzzle {
                 return;
             }
         }, false);
-        this.canvas.addEventListener("mousemove", event => {
+        this.disposable.addEventListener(this.canvas, "mousemove", event => {
             if (this.current_rifts.length === 0)
                 return;
             if (this.current_images.size === 0)
@@ -582,16 +585,16 @@ export class SpaceRiftPuzzle {
             else if (is_drawing())
                 draw_to(point);
         }, false);
-        this.canvas.addEventListener("mouseup", event => {
+        this.disposable.addEventListener(this.canvas, "mouseup", event => {
             cancel_dragging_rift();
             cancel_drawing();
         }, false);
-        this.canvas.addEventListener("mouseleave", event => {
+        this.disposable.addEventListener(this.canvas, "mouseleave", event => {
             cancel_dragging_rift();
             cancel_drawing();
         }, false);
         // TODO: find a better way
-        document.addEventListener("keydown", event => {
+        this.disposable.addEventListener_(document, "keydown", event => {
             var _a;
             if (event.key === "c") {
                 const cmd = prompt("command");
@@ -604,16 +607,46 @@ export class SpaceRiftPuzzle {
     }
     registerRenderEvent() {
         let counter = 0;
+        let stop = false;
         const step = (timeStamp) => {
             const updated = this.update();
             if (updated) {
                 counter += 1;
                 this.render(counter);
             }
+            if (stop)
+                return;
             requestAnimationFrame(step);
         };
+        this.disposable.addDisposeCallback(() => { stop = true; });
         requestAnimationFrame(step);
         this.render(counter);
+    }
+}
+class Disposable {
+    constructor() {
+        this.callbacks = [];
+    }
+    addDisposeCallback(callback) {
+        this.callbacks.push(callback);
+    }
+    addEventListener(element, type, listener, options) {
+        element.addEventListener(type, listener, options);
+        this.callbacks.push(() => {
+            element.removeEventListener(type, listener);
+        });
+    }
+    addEventListener_(document, type, listener, options) {
+        document.addEventListener;
+        document.addEventListener(type, listener, options);
+        this.callbacks.push(() => {
+            document.removeEventListener(type, listener);
+        });
+    }
+    dispose() {
+        for (const callback of this.callbacks) {
+            callback();
+        }
     }
 }
 //# sourceMappingURL=SpaceRiftPuzzle.js.map
