@@ -763,28 +763,29 @@ export var PrincipalPuzzle;
     function makePuzzle(factory, shape) {
         const puzzle = Puzzle.makePuzzle(factory, shape);
         const rifts = factory.make_rifts(shape);
-        const branch_points = rifts.branch_points.map((branch_point, index) => {
+        const rift_endpoints = rifts.rift_endpoints.map(({ point }, index) => {
             const rel_angles = rifts.rifts.map(rift => {
                 if (index === rift.left || index === rift.right) {
                     return 0;
                 }
                 else {
-                    let coord = HyperbolicPolarCoordinate.getCoordinateFromPoint(rifts.branch_points[rift.left].point, rifts.branch_points[rift.right].point, branch_point.point);
+                    let coord = HyperbolicPolarCoordinate.getCoordinateFromPoint(rifts.rift_endpoints[rift.left].point, rifts.rift_endpoints[rift.right].point, point);
                     coord = HyperbolicPolarCoordinate.offsetTo(coord, rift.coord.offset);
                     return Geo.as_0_2pi(coord.angle - rift.coord.angle);
                 }
             });
-            return { ...branch_point, perm: asCyclicPerm(branch_point.order), rel_angles };
+            return { point, perm: asCyclicPerm(rifts.branch_points[index].order), rel_angles };
         });
         return {
             ...puzzle,
-            branch_points,
+            branch_points: rifts.branch_points,
+            rift_endpoints,
             rifts: rifts.rifts,
             rift_hierarchy: rifts.rift_hierarchy,
         };
     }
     PrincipalPuzzle.makePuzzle = makePuzzle;
-    function computeRiftRelAngles(branch_points, new_rifts) {
+    function computeRiftRelAngles(branch_points, new_rifts, old_rift_hierarchy) {
         const rel_angless_ = branch_points.map((branch_point, pindex) => new_rifts.map(rift => {
             if (pindex === rift.left || pindex === rift.right) {
                 return 0;
@@ -814,13 +815,22 @@ export var PrincipalPuzzle;
             .map(([cross, rel_angles]) => zip(cross, rel_angles)
             .map(([turn, rel_angle]) => rel_angle - turn * Math.PI * 2));
         const cross_relations = crosses.flatMap((cross, i) => cross.flatMap((turn, j) => (turn === 0 ? [] : [[i, j]])));
+        const transferred_rift_hierarchy = [...old_rift_hierarchy];
+        for (const [branch_point_index, rift_index] of cross_relations) {
+            const rift_index_ = new_rifts.findIndex(rift => rift.left === branch_point_index || rift.right === branch_point_index);
+            assert(rift_index_ !== -1);
+            if (isReachable(transferred_rift_hierarchy, rift_index, rift_index_)) {
+                return Result.err("try to cross the rift above from below");
+            }
+            transferred_rift_hierarchy.push([rift_index_, rift_index]);
+        }
         return Result.ok({
             rel_angless,
             cross_relations,
         });
     }
-    function getInfRadius(puzzle, rift) {
-        return puzzle.R * 1.5 + Math.max(rift.left, rift.right) * puzzle.radius / 10;
+    function getInfRadius(puzzle, i) {
+        return puzzle.R * 1.5 + i * puzzle.radius / 10;
     }
     function calculateRiftShape(left_point, right_point, coord, inf_radius) {
         const [middle, is_solid] = HyperbolicPolarCoordinate.getHyperbolaPoint(left_point, right_point, coord);
@@ -855,10 +865,10 @@ export var PrincipalPuzzle;
             ],
         };
     }
-    function cutRiftShapes(puzzle, rifts, rift_shapes, cross_relations) {
-        const crossing_state = indices(puzzle.branch_points.length).map(index => cross_relations.some(([i, j]) => i === index));
+    function cutRiftShapes(rift_endpoints, rifts, rift_shapes, old_rift_hierarchy, cross_relations) {
+        const crossing_state = indices(rift_endpoints.length).map(index => cross_relations.some(([i, j]) => i === index));
         // calculate transferred rift hierarchy
-        const transferred_rift_hierarchy = [...puzzle.rift_hierarchy];
+        const transferred_rift_hierarchy = [...old_rift_hierarchy];
         for (const [branch_point_index, rift_index] of cross_relations) {
             const rift_index_ = rifts.findIndex(rift => rift.left === branch_point_index || rift.right === branch_point_index);
             assert(rift_index_ !== -1);
@@ -915,7 +925,7 @@ export var PrincipalPuzzle;
             assert(!left_crossing || !right_crossing);
             if (!left_crossing) {
                 // from left
-                const left_perm = puzzle.branch_points[rifts[rift_index].left].perm;
+                const left_perm = rift_endpoints[rifts[rift_index].left].perm;
                 let perm = left_perm;
                 for (const [info, cross_perm] of zip(sorted_intersections, cross_perms)) {
                     if (info.above_pos[0] === rift_index) {
@@ -935,7 +945,7 @@ export var PrincipalPuzzle;
             }
             else {
                 // from right
-                const right_perm = reverseCyclicPerm(puzzle.branch_points[rifts[rift_index].right].perm);
+                const right_perm = reverseCyclicPerm(rift_endpoints[rifts[rift_index].right].perm);
                 let perm = right_perm;
                 for (const [info, cross_perm] of zip(sorted_intersections, cross_perms).reverse()) {
                     if (info.above_pos[0] === rift_index) {
@@ -956,13 +966,13 @@ export var PrincipalPuzzle;
             // check permutations at branch points
             if (!left_crossing) {
                 const index = rifts[rift_index].left;
-                if (cmp(branch_point_perms[index], puzzle.branch_points[index].perm) !== 0) {
+                if (cmp(branch_point_perms[index], rift_endpoints[index].perm) !== 0) {
                     return Result.err(`${index}-th branch point's permutation changes without crossing`);
                 }
             }
             if (!right_crossing) {
                 const index = rifts[rift_index].right;
-                if (cmp(branch_point_perms[index], puzzle.branch_points[index].perm) !== 0) {
+                if (cmp(branch_point_perms[index], rift_endpoints[index].perm) !== 0) {
                     return Result.err(`${index}-th branch point's permutation changes without crossing`);
                 }
             }
@@ -1024,19 +1034,16 @@ export var PrincipalPuzzle;
             rift_hierarchy,
         });
     }
-    function calculateCuttedRiftShapes(puzzle, rifts) {
-        const res1 = computeRiftRelAngles(puzzle.branch_points, rifts);
+    function calculateCuttedRiftShapes(puzzle_shape, rift_endpoints, rifts, old_rift_hierarchy) {
+        const res1 = computeRiftRelAngles(rift_endpoints, rifts, old_rift_hierarchy);
         if (!res1.ok)
-            return res1;
-        const rift_shapes = rifts.map(rift => {
-            const left_point = puzzle.branch_points[rift.left].point;
-            const right_point = puzzle.branch_points[rift.right].point;
-            return calculateRiftShape(left_point, right_point, rift.coord, getInfRadius(puzzle, rift));
-        });
-        const res2 = cutRiftShapes(puzzle, rifts, rift_shapes, res1.result.cross_relations);
+            return Result.ok({ is_knotted: true, reason: res1.error });
+        const rift_shapes = rifts.map((rift, i) => calculateRiftShape(rift_endpoints[rift.left].point, rift_endpoints[rift.right].point, rift.coord, getInfRadius(puzzle_shape, i)));
+        const res2 = cutRiftShapes(rift_endpoints, rifts, rift_shapes, old_rift_hierarchy, res1.result.cross_relations);
         if (!res2.ok)
             return res2;
         return Result.ok({
+            is_knotted: false,
             ...res2.result,
             rel_angless: res1.result.rel_angless,
             rift_shapes,
@@ -1047,9 +1054,11 @@ export var PrincipalPuzzle;
         const PERTURBATION = 1e-4;
         const shapes = Puzzle.calculateShapes(puzzle);
         function go(rifts, n) {
-            const res1 = calculateCuttedRiftShapes(puzzle, rifts);
+            const res1 = calculateCuttedRiftShapes(puzzle, puzzle.rift_endpoints, rifts, puzzle.rift_hierarchy);
             if (!res1.ok)
                 return res1;
+            if (res1.result.is_knotted)
+                return Result.err(res1.result.reason);
             const res2 = cutShapes(puzzle, shapes, res1.result.rift_shapes);
             if (!res2.ok)
                 return res2;
@@ -1058,7 +1067,7 @@ export var PrincipalPuzzle;
                 return res3;
             const branch_points = zip(res1.result.crossing_branch_point_perms, res3.result.orders)
                 .map(([perm, order], i) => ({
-                perm: perm !== null && perm !== void 0 ? perm : puzzle.branch_points[i].perm,
+                perm: perm !== null && perm !== void 0 ? perm : puzzle.rift_endpoints[i].perm,
                 order,
             }));
             return Result.ok({ layers: res3.result.layers, rifts: res1.result.rift_shapes, branch_points });
@@ -1087,9 +1096,9 @@ export var PrincipalPuzzle;
             console.warn(`fail to clip path (${RETRY}): ${res.error}`);
             return undefined;
         }
-        for (const [branch_point, { order, perm }] of zip(puzzle.branch_points, res.result.branch_points)) {
-            branch_point.order = order;
-            branch_point.perm = perm;
+        for (const i of indices(res.result.branch_points.length)) {
+            puzzle.branch_points[i].order = res.result.branch_points[i].order;
+            puzzle.rift_endpoints[i].perm = res.result.branch_points[i].perm;
         }
         return {
             layers: res.result.layers,
@@ -1254,6 +1263,7 @@ export var PrincipalPuzzle;
         for (const i of indices(puzzle.ramified.length)) {
             const ramified = puzzle.ramified[i];
             const branch_point = puzzle.branch_points[i];
+            const rift_endpoint = puzzle.rift_endpoints[i];
             const rift_index = puzzle.rifts.findIndex(({ left, right }) => left === i || right === i);
             const rift_side = puzzle.rifts[rift_index].left === i;
             const rift_shape = rift_shapes[rift_index];
@@ -1265,7 +1275,7 @@ export var PrincipalPuzzle;
                 const angle_err = Math.abs(Geo.as_npi_pi(ramified_angle_ - cut_angle));
                 if (angle_err >= ANG_EPS)
                     console.warn(`ramified angle error: ${angle_err}`);
-                const pos_err = Geo.norm(Geo.sub(point, branch_point.point));
+                const pos_err = Geo.norm(Geo.sub(point, rift_endpoint.point));
                 if (pos_err >= POS_EPS)
                     console.warn(`ramified position error: ${pos_err}`);
                 cut_angle = Geo.as_npi_pi(ramified_angle_ - cut_angle) + cut_angle;
@@ -1354,7 +1364,7 @@ export var PrincipalPuzzle;
                 const turn = cutted_ramified_shapes[ramified_index].indexOf(path);
                 let order;
                 if (puzzle.branch_points[ramified_index].order === undefined) {
-                    const perm = puzzle.branch_points[ramified_index].perm;
+                    const perm = puzzle.rift_endpoints[ramified_index].perm;
                     const turn_ = perm.indexOf(layer_index);
                     if (turn_ === -1) {
                         return Result.err(`conflict layer: layer ${layer_index} is not in perm=[${perm}] of ${ramified_index}-th branch point`);
@@ -1430,10 +1440,22 @@ export var PrincipalPuzzle;
             orders,
         });
     }
-    function updateRiftRelAngles(puzzle) {
+    function updateRifts(puzzle, points, coords) {
         const RETRY = 5;
         const PERTURBATION = 1e-4;
-        let res = calculateCuttedRiftShapes(puzzle, puzzle.rifts);
+        const rift_endpoints = puzzle.rift_endpoints.map(endpoint => ({ ...endpoint }));
+        if (points !== undefined) {
+            for (const i of indices(rift_endpoints.length)) {
+                rift_endpoints[i].point = [...points[i]];
+            }
+        }
+        const rifts = puzzle.rifts.map(rift => ({ ...rift }));
+        if (coords !== undefined) {
+            for (const i of indices(rifts.length)) {
+                rifts[i].coord = { ...coords[i] };
+            }
+        }
+        let res = calculateCuttedRiftShapes(puzzle, rift_endpoints, rifts, puzzle.rift_hierarchy);
         for (const n of indices(RETRY)) {
             if (res.ok)
                 break;
@@ -1442,7 +1464,7 @@ export var PrincipalPuzzle;
                 angle: (Math.random() - 0.5) * PERTURBATION,
                 offset: (Math.random() - 0.5) * PERTURBATION,
             };
-            const perturb_rifts = puzzle.rifts
+            const perturb_rifts = rifts
                 .map(({ left, right, coord }) => ({
                 left,
                 right,
@@ -1451,20 +1473,30 @@ export var PrincipalPuzzle;
                     offset: coord.offset + perturbation.offset,
                 },
             }));
-            res = calculateCuttedRiftShapes(puzzle, perturb_rifts);
+            res = calculateCuttedRiftShapes(puzzle, rift_endpoints, perturb_rifts, puzzle.rift_hierarchy);
         }
         if (!res.ok) {
             console.warn(`fail to cut rifts (${RETRY}): ${res.error}`);
             console.error("fail to update rift rel angles");
             return false;
         }
-        for (const [branch_point, rel_angles] of zip(puzzle.branch_points, res.result.rel_angless)) {
-            branch_point.rel_angles = rel_angles;
+        if (res.result.is_knotted) {
+            return false;
         }
-        for (const [branch_point, perm] of zip(puzzle.branch_points, res.result.crossing_branch_point_perms)) {
+        for (const i of indices(puzzle.rifts.length)) {
+            if (coords !== undefined) {
+                puzzle.rifts[i].coord = coords[i];
+            }
+        }
+        for (const i of indices(puzzle.rift_endpoints.length)) {
+            if (points !== undefined) {
+                puzzle.rift_endpoints[i].point = points[i];
+            }
+            puzzle.rift_endpoints[i].rel_angles = res.result.rel_angless[i];
+            const perm = res.result.crossing_branch_point_perms[i];
             if (perm !== undefined) {
-                branch_point.order = undefined;
-                branch_point.perm = perm;
+                puzzle.branch_points[i].order = undefined;
+                puzzle.rift_endpoints[i].perm = perm;
             }
         }
         puzzle.rift_hierarchy = res.result.rift_hierarchy;
@@ -1486,21 +1518,22 @@ export var PrincipalPuzzle;
             console.warn(`twist angle changes too much: ${twist_angle_diff}`);
         const is_moved = puzzle.ramified
             .map(ramified => ramified.pieces.some(piece => pieces.has(piece)));
-        const moved_points = puzzle.branch_points
+        const moved_points = puzzle.rift_endpoints
             .map(({ point }, index) => is_moved[index] ? Geo.transformPoint(point, shift_trans) : point);
         const lean_angle_diffs = puzzle.rifts
-            .map(rift => Geo.angleBetween([0, 0], Geo.sub(puzzle.branch_points[rift.right].point, puzzle.branch_points[rift.left].point), Geo.sub(moved_points[rift.right], moved_points[rift.left])));
+            .map(rift => Geo.angleBetween([0, 0], Geo.sub(puzzle.rift_endpoints[rift.right].point, puzzle.rift_endpoints[rift.left].point), Geo.sub(moved_points[rift.right], moved_points[rift.left])));
         const cut_angle_diffs = indices(puzzle.branch_points.length)
             .map(i => puzzle.rifts.findIndex(({ left, right }) => left === i || right === i))
             .map(rift_index => rift_index === -1 ? 0 : lean_angle_diffs[rift_index])
             .map((lean_angle_diff, i) => lean_angle_diff - (is_moved[i] ? twist_angle_diff : 0));
-        for (const i of indices(puzzle.branch_points.length)) {
-            puzzle.branch_points[i].cut_angle += cut_angle_diffs[i];
-            puzzle.branch_points[i].point = moved_points[i];
+        const succ = updateRifts(puzzle, moved_points, undefined);
+        if (succ) {
+            for (const i of indices(puzzle.branch_points.length)) {
+                puzzle.branch_points[i].cut_angle += cut_angle_diffs[i];
+            }
+            AbstractPuzzle.setShift(puzzle, side, sheets, angle);
         }
-        AbstractPuzzle.setShift(puzzle, side, sheets, angle);
-        updateRiftRelAngles(puzzle);
-        return true;
+        return succ;
     }
     PrincipalPuzzle.setShift = setShift;
     function snap(puzzle) {
@@ -1509,20 +1542,23 @@ export var PrincipalPuzzle;
     PrincipalPuzzle.snap = snap;
     function setRift(puzzle, index, coord) {
         const ANGLE_MAX_STEP = Math.PI / 3;
-        const { offset, angle } = coord;
-        const offset_ = Math.min(Math.max(offset, -MAX_RIFT_OFFSET), MAX_RIFT_OFFSET);
+        coord = { ...coord };
+        coord.offset = Math.min(Math.max(coord.offset, -MAX_RIFT_OFFSET), MAX_RIFT_OFFSET);
         const coord0 = puzzle.rifts[index].coord;
         if (Math.abs(coord.angle - coord0.angle) > ANGLE_MAX_STEP)
             console.warn(`rift angle changes too much: ${coord.angle - coord0.angle}`);
-        const [left_angle0, right_angle0] = HyperbolicPolarCoordinate.getFocusAngles(coord0);
-        const [left_angle, right_angle] = HyperbolicPolarCoordinate.getFocusAngles({ offset: offset_, angle });
-        const left_angle_diff = left_angle - left_angle0;
-        const right_angle_diff = right_angle0 - right_angle;
-        puzzle.rifts[index].coord = { offset: offset_, angle };
-        puzzle.branch_points[puzzle.rifts[index].left].cut_angle += left_angle_diff;
-        puzzle.branch_points[puzzle.rifts[index].right].cut_angle += right_angle_diff;
-        const succ = updateRiftRelAngles(puzzle);
-        return true;
+        const coords = puzzle.rifts.map(({ coord }) => coord);
+        coords[index] = coord;
+        const succ = updateRifts(puzzle, undefined, coords);
+        if (succ) {
+            const [left_angle0, right_angle0] = HyperbolicPolarCoordinate.getFocusAngles(coord0);
+            const [left_angle, right_angle] = HyperbolicPolarCoordinate.getFocusAngles(coord);
+            const left_angle_diff = left_angle - left_angle0;
+            const right_angle_diff = right_angle0 - right_angle;
+            puzzle.branch_points[puzzle.rifts[index].left].cut_angle += left_angle_diff;
+            puzzle.branch_points[puzzle.rifts[index].right].cut_angle += right_angle_diff;
+        }
+        return succ;
     }
     PrincipalPuzzle.setRift = setRift;
 })(PrincipalPuzzle || (PrincipalPuzzle = {}));
@@ -1681,8 +1717,12 @@ export var Builder;
             make_rifts: (shape) => {
                 return {
                     branch_points: [
-                        { point: [-shape.center_x, 0], cut_angle: Math.PI / 6, order: indices(turn) },
-                        { point: [shape.center_x, 0], cut_angle: Math.PI / 6, order: rotate(indices(turn), 1).reverse() },
+                        { cut_angle: Math.PI / 6, order: indices(turn) },
+                        { cut_angle: Math.PI / 6, order: rotate(indices(turn), 1).reverse() },
+                    ],
+                    rift_endpoints: [
+                        { point: [-shape.center_x, 0] },
+                        { point: [shape.center_x, 0] },
                     ],
                     rifts: [
                         { left: 0, right: 1, coord: { offset: 0.0, angle: 0.0 } }
@@ -1748,8 +1788,12 @@ export var Builder;
             make_rifts: (shape) => {
                 return {
                     branch_points: [
-                        { point: [0, shape.center_x / Math.sqrt(3)], cut_angle: Math.PI / 3, order: indices(turn) },
-                        { point: [0, -shape.center_x / Math.sqrt(3)], cut_angle: Math.PI / 3, order: rotate(indices(turn), 1).reverse() },
+                        { cut_angle: Math.PI / 3, order: indices(turn) },
+                        { cut_angle: Math.PI / 3, order: rotate(indices(turn), 1).reverse() },
+                    ],
+                    rift_endpoints: [
+                        { point: [0, shape.center_x / Math.sqrt(3)] },
+                        { point: [0, -shape.center_x / Math.sqrt(3)] },
                     ],
                     rifts: [
                         { left: 0, right: 1, coord: { offset: 0.0, angle: 0.0 } }
@@ -1832,10 +1876,16 @@ export var Builder;
             make_rifts: (shape) => {
                 return {
                     branch_points: [
-                        { point: [-shape.center_x, 0], cut_angle: Math.PI / 6, order: indices(turn) },
-                        { point: [shape.center_x, 0], cut_angle: Math.PI / 6, order: rotate(indices(turn), 1).reverse() },
-                        { point: [0, shape.center_x / Math.sqrt(3)], cut_angle: Math.PI / 3, order: indices(turn) },
-                        { point: [0, -shape.center_x / Math.sqrt(3)], cut_angle: Math.PI / 3, order: rotate(indices(turn), 1).reverse() },
+                        { cut_angle: Math.PI / 6, order: indices(turn) },
+                        { cut_angle: Math.PI / 6, order: rotate(indices(turn), 1).reverse() },
+                        { cut_angle: Math.PI / 3, order: indices(turn) },
+                        { cut_angle: Math.PI / 3, order: rotate(indices(turn), 1).reverse() },
+                    ],
+                    rift_endpoints: [
+                        { point: [-shape.center_x, 0] },
+                        { point: [shape.center_x, 0] },
+                        { point: [0, shape.center_x / Math.sqrt(3)] },
+                        { point: [0, -shape.center_x / Math.sqrt(3)] },
                     ],
                     rifts: [
                         { left: 0, right: 1, coord: { offset: 0.0, angle: 0.0 } },
@@ -1918,10 +1968,16 @@ export var Builder;
             make_rifts: (shape) => {
                 return {
                     branch_points: [
-                        { point: [-shape.center_x, 0], cut_angle: Math.PI / 6, order: [0, 2] },
-                        { point: [shape.center_x, 0], cut_angle: Math.PI / 6, order: [1, 2] },
-                        { point: [0, shape.center_x / Math.sqrt(3)], cut_angle: Math.PI / 3, order: [0, 1] },
-                        { point: [0, -shape.center_x / Math.sqrt(3)], cut_angle: Math.PI / 3, order: [0, 1] },
+                        { cut_angle: Math.PI / 6, order: [0, 2] },
+                        { cut_angle: Math.PI / 6, order: [1, 2] },
+                        { cut_angle: Math.PI / 3, order: [0, 1] },
+                        { cut_angle: Math.PI / 3, order: [0, 1] },
+                    ],
+                    rift_endpoints: [
+                        { point: [-shape.center_x, 0] },
+                        { point: [shape.center_x, 0] },
+                        { point: [0, shape.center_x / Math.sqrt(3)] },
+                        { point: [0, -shape.center_x / Math.sqrt(3)] },
                     ],
                     rifts: [
                         { left: 0, right: 1, coord: { offset: 0.0, angle: 0.0 } },

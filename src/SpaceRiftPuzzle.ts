@@ -66,6 +66,7 @@ export class SpaceRiftPuzzle {
   current_rifts: Geo.Path<undefined>[];
   render_frame: boolean = true;
   render_ruler: boolean = false;
+  render_counter: boolean = false;
   rendering_layer: number = 0;
   focus_piece: Model.Piece | undefined = undefined;
   
@@ -144,35 +145,50 @@ export class SpaceRiftPuzzle {
       return true;
 
     } else if (this.control_state.type === PuzzleControlStateType.Twisting) {
-      // TODO: rebound if fail to twist
       const t = (time - this.control_state.start_time) / this.control_state.duration;
       if (!Number.isFinite(t) || t > 1) {
         assert(this.model.states[this.control_state.sheet].type !== Model.StateType.Aligned);
-        Model.PrincipalPuzzleWithTexture.setShift(
+        const succ = Model.PrincipalPuzzleWithTexture.setShift(
           this.model,
           this.control_state.side,
           this.control_state.sheet,
           this.control_state.angle_to,
         );
-        Model.PrincipalPuzzleWithTexture.snap(this.model);
-        assert(Model.AbstractPuzzle.isAligned(this.model));
-        this.control_state = {type: PuzzleControlStateType.Ready};
+        if (!succ) {
+          const angle = this.control_state.angle_to;
+          this.control_state.duration = this.control_state.duration;
+          this.control_state.start_time = time;
+          this.control_state.angle_to = this.control_state.angle_from;
+          this.control_state.angle_from = angle;
+        } else {
+          const succ2 = Model.PrincipalPuzzleWithTexture.snap(this.model);
+          if (!succ2) {
+            console.error("fail to twist");
+          }
+          assert(Model.AbstractPuzzle.isAligned(this.model));
+          this.control_state = {type: PuzzleControlStateType.Ready};
+        }
       } else {
         const angle = this.control_state.angle_from + (this.control_state.angle_to - this.control_state.angle_from) * t;
-        Model.PrincipalPuzzleWithTexture.setShift(
+        const succ = Model.PrincipalPuzzleWithTexture.setShift(
           this.model,
           this.control_state.side,
           this.control_state.sheet,
           angle,
         );
+        if (!succ) {
+          this.control_state.duration = t * this.control_state.duration;
+          this.control_state.start_time = time;
+          this.control_state.angle_to = this.control_state.angle_from;
+          this.control_state.angle_from = angle;
+        }
       }
       return true;
 
     } else if (this.control_state.type === PuzzleControlStateType.Tearing) {
-      // TODO: rebound if fail to tear
       const t = (time - this.control_state.start_time) / this.control_state.duration;
       if (!Number.isFinite(t) || t > 1) {
-        Model.PrincipalPuzzleWithTexture.setRift(
+        const succ = Model.PrincipalPuzzleWithTexture.setRift(
           this.model,
           this.control_state.index,
           {offset:this.control_state.offset_to, angle:this.control_state.angle_to},
@@ -183,11 +199,14 @@ export class SpaceRiftPuzzle {
           + (this.control_state.angle_to - this.control_state.angle_from) * t;
         const offset = this.control_state.offset_from
           + (this.control_state.offset_to - this.control_state.offset_from) * t;
-        Model.PrincipalPuzzleWithTexture.setRift(
+        const succ = Model.PrincipalPuzzleWithTexture.setRift(
           this.model,
           this.control_state.index,
           {offset, angle},
         );
+        if (!succ) {
+          this.control_state = {type: PuzzleControlStateType.Ready};
+        }
       }
       return true;
 
@@ -361,10 +380,12 @@ export class SpaceRiftPuzzle {
       }
     }
 
-    // // for debug
-    // ctx.fillStyle = "white";
-    // ctx.font = "26px serif";
-    // ctx.fillText(`${n}`, 10, 50);
+    // counter
+    if (this.render_counter) {
+      ctx.fillStyle = "white";
+      ctx.font = "26px serif";
+      ctx.fillText(`${n}`, 10, 50);
+    }
 
     return true;
   }
@@ -436,7 +457,8 @@ export class SpaceRiftPuzzle {
     duration ??= TWIST_DURATION;
 
     const step_angle = Math.PI/3;
-    Model.PrincipalPuzzleWithTexture.setShift(this.model, side, sheet, 0);
+    const succ = Model.PrincipalPuzzleWithTexture.setShift(this.model, side, sheet, 0);
+    if (!succ) return false;
     this.control_state = {
       type: PuzzleControlStateType.Twisting,
       duration,
@@ -468,8 +490,8 @@ export class SpaceRiftPuzzle {
     return true;
   }
   tearTo(index: number, point: Geo.Point, duration?: number): boolean {
-    const p1 = this.model.branch_points[this.model.rifts[index].left].point;
-    const p2 = this.model.branch_points[this.model.rifts[index].right].point;
+    const p1 = this.model.rift_endpoints[this.model.rifts[index].left].point;
+    const p2 = this.model.rift_endpoints[this.model.rifts[index].right].point;
     const angle0 = this.model.rifts[index].coord.angle;
     const {offset, angle} = Model.HyperbolicPolarCoordinate.getCoordinateFromPoint(p1, p2, point);
     const angle_ = Geo.as_npi_pi(angle - angle0) + angle0;
@@ -477,8 +499,8 @@ export class SpaceRiftPuzzle {
   }
   tearToImmediately(index: number, point: Geo.Point): boolean {
     if (this.control_state.type !== PuzzleControlStateType.Ready) return false;
-    const p1 = this.model.branch_points[this.model.rifts[index].left].point;
-    const p2 = this.model.branch_points[this.model.rifts[index].right].point;
+    const p1 = this.model.rift_endpoints[this.model.rifts[index].left].point;
+    const p2 = this.model.rift_endpoints[this.model.rifts[index].right].point;
     const angle0 = this.model.rifts[index].coord.angle;
     const {offset, angle} = Model.HyperbolicPolarCoordinate.getCoordinateFromPoint(p1, p2, point);
     const angle_ = Geo.as_npi_pi(angle - angle0) + angle0;
@@ -504,8 +526,8 @@ export class SpaceRiftPuzzle {
     const start_dragging_rift = (point: Geo.Point) => {
       const rift_points = this.model.rifts.map(rift => 
         Model.HyperbolicPolarCoordinate.getHyperbolaPoint(
-          this.model.branch_points[rift.left].point,
-          this.model.branch_points[rift.right].point,
+          this.model.rift_endpoints[rift.left].point,
+          this.model.rift_endpoints[rift.right].point,
           rift.coord,
         )
       );
@@ -524,7 +546,7 @@ export class SpaceRiftPuzzle {
     };
     const drag_rift_to = (point: Geo.Point) => {
       assert(dragging_rift_index !== undefined);
-      this.tearToImmediately(dragging_rift_index, point);
+      const succ = this.tearToImmediately(dragging_rift_index, point);
     };
 
     let scrolling_rift_index: number | undefined = undefined;
