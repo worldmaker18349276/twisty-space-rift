@@ -41,7 +41,7 @@ I made $\sqrt{z^2-1}$ into a twisty puzzle!!
     texture and space: consists of
 
     - $(z+1)^{1/2} (z-1)^{1/2} (z-i)^{1/2} (z+i)^{1/2}$
-    - $- (z+1)^{1/2} (z-1)^{1/2} |z + i \, \mathrm{sign}(\Im[z])|$
+    - $- (z+1)^{1/2} (z-1)^{1/2} |z + i\ \mathrm{sign}(\Im[z])|$
     - $|z + \mathrm{sign}(\Re[z])| (z-i)^{1/2} (z-i)^{1/2} z/|z|$
 
     It is similar to Quadrapole(3), but two branch cuts don't commute, which makes them interlock each others, but not fun to play as a result.  These two rifts glue different pairs of sheets, so one can observe that branch points will be submerged in another rift.
@@ -89,7 +89,7 @@ However, above discussion only works on this puzzle, which only use the same typ
 
 ### Movement Of Branch Cuts
 
-An analytic formula, say `(z+1)^(1/3) (z-1)^(2/3)`, has multiple solutions almost everywhere, in this example it has three solutions for every input `z` except for `z = 1` and `z = -1` (**branch points**).  Assume we find a way to sort those solutions for each input `z`, and by drawing $n$-th solution as $n$-layer of plot, they looks almost continuous.  The discontinuous parts form curves connecting two branch points, called a **branch cut**.  In this multi-layer plot, $n$-th solution at point `z` is very close to the $n$-th solution at adjacent point `z + dz`, but this doesn't hold for those branch cuts.  For this law to hold, a permutation should be further applied when crossing branch cuts.  For above example, if it crosses the branch cut from below, the $n$-th solution at point `z` is very close to the $\sigma(n)$-th solution at adjacent point `z + dz`, where the permutation is denoted as $\sigma = (0\,1\,2)$ in the cycle notation:
+An analytic formula, say `(z+1)^(1/3) (z-1)^(2/3)`, has multiple solutions almost everywhere, in this example it has three solutions for every input `z` except for `z = 1` and `z = -1` (**branch points**).  Assume we find a way to sort those solutions for each input `z`, and by drawing $n$-th solution as $n$-layer of plot, they looks almost continuous.  The discontinuous parts form curves connecting two branch points, called a **branch cut**.  In this multi-layer plot, $n$-th solution at point `z` is very close to the $n$-th solution at adjacent point `z + dz`, but this doesn't hold for those branch cuts.  For this law to hold, a permutation should be further applied when crossing branch cuts.  For above example, if it crosses the branch cut from below, the $n$-th solution at point `z` is very close to the $\sigma(n)$-th solution at adjacent point `z + dz`, where the permutation is denoted as $\sigma = (0\ 1\ 2)$ in the cycle notation:
 
 ![](img/branch_cut_perm.png)
 
@@ -102,7 +102,7 @@ With this model, we can track the permutation it accumulated of a point moving t
 
 ### Crossing Over Branch Cuts
 
-Ok, now we know how branch cuts actually move, then we want to follow the same way to study what happen if branch cuts cross each other.  When branch cuts don't intersect each others, we can recognize them by connectivity, but if they intersect, we need a new method to identify branch cuts.  An obvious alternative way is to use permutations to identify them, but this is illegal.  As a counter-example, two branch cuts with permutations $(0\,1\,2)$ and $(0\,1)$ cannot cross each other, otherwise their intersection point will violate the law:
+Ok, now we know how branch cuts actually move, then we want to follow the same way to study what happen if branch cuts cross each other.  When branch cuts don't intersect each others, we can recognize them by connectivity, but if they intersect, we need a new method to identify branch cuts.  An obvious alternative way is to use permutations to identify them, but this is illegal.  As a counter-example, two branch cuts with permutations $(0\ 1\ 2)$ and $(0\ 1)$ cannot cross each other, otherwise their intersection point will violate the law:
 
 ![](img/branch_cut_cross_illegal.png)
 
