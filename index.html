@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <title>Space Rift Intersecting Circle Puzzles</title>
+  <script async defer src="https://buttons.github.io/buttons.js"></script>
   <script type="module">
     import {SpaceRiftPuzzle} from "./build/SpaceRiftPuzzle.js";
 
@@ -24,17 +25,30 @@
   </script>
 
   <style>
+    @media (prefers-color-scheme: light) {
+      :root {
+        --font-color: #333;
+        --inactive-color: #ddd;
+        --hover-color: #bbb;
+        --active-color: #eee;
+        --background-color: #eee;
+      }
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --font-color: #ddd;
+        --inactive-color: #333;
+        --hover-color: #555;
+        --active-color: #222;
+        --background-color: #222;
+      }
+    }
+
     body {
       font-family: Arial, sans-serif;
       margin: 0;
       padding: 0;
-    }
-
-    ul {
-      --font-color: #333;
-      --inactive-color: #f1f1f1;
-      --hover-color: #ddd;
-      --active-color: #fff;
+      background: var(--background-color);
     }
 
     ul.tab-list {
@@ -84,12 +98,19 @@
     }
 
     dialog#help {
+      background: var(--background-color);
+      color: var(--font-color);
       border: none;
     }
     dialog#help button {
-      display: block;
+      background: var(--inactive-color);
+      color: var(--font-color);
+      float: inline-end;
       padding: 5px 10px;
       border: none;
+    }
+    dialog#help button:hover {
+      background: var(--hover-color);
     }
   </style>
 </head>
@@ -114,6 +135,8 @@
     <!-- <p>Ctrl-click to select a piece of the puzzle.</p>
     <p>Press "c" to open command palette.</p> -->
 
+    <br/>
+    <a class="github-button" href="https://github.com/worldmaker18349276/twisty-space-rift" data-color-scheme="no-preference: light; light: light; dark: dark;" data-size="large" aria-label="Star worldmaker18349276/twisty-space-rift on GitHub">Star</a>
     <button autofocus onclick="document.querySelector('#help').close()">Close</button>
   </dialog>
 </body>
