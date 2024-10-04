@@ -41,8 +41,8 @@ I made $\sqrt{z^2-1}$ into a twisty puzzle!!
     texture and space: consists of
 
     - $(z+1)^{1/2} (z-1)^{1/2} (z-i)^{1/2} (z+i)^{1/2}$
-    - $- (z+1)^{1/2} (z-1)^{1/2} |z + i \operatorname{sign}(\Im[z])|$
-    - $|z + \operatorname{sign}(\Re[z])| (z-i)^{1/2} (z-i)^{1/2} z/|z|$
+    - $- (z+1)^{1/2} (z-1)^{1/2} |z + i \, \mathrm{sign}(\Im[z])|$
+    - $|z + \mathrm{sign}(\Re[z])| (z-i)^{1/2} (z-i)^{1/2} z/|z|$
 
     It is similar to Quadrapole(3), but two branch cuts don't commute, which makes them interlock each others, but not fun to play as a result.  These two rifts glue different pairs of sheets, so one can observe that branch points will be submerged in another rift.
 
